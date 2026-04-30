@@ -13,28 +13,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-cmake_minimum_required(VERSION 3.10)
 
-project(modelbox-device)
+prefix=/usr
+exec_prefix=${prefix}
+libdir=${prefix}/lib
+includedir=${prefix}/include/modelbox/device/intel_gpu
 
-if(${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_BINARY_DIR})
-    message(FATAL_ERROR "Do not build in source directory!")
-endif()
-
-if(ACL_FOUND AND DSMI_FOUND)
-    add_subdirectory(ascend)
-endif()
-
-add_subdirectory(cpu)
-
-if(CUDA_FOUND)
-    add_subdirectory(cuda)
-endif()
-
-if(ROCKCHIP_FOUND)
-    add_subdirectory(rockchip)
-endif()
-
-if(INTELGPU_FOUND)
-    add_subdirectory(intel_gpu)
-endif()
+Name: libmodelbox-device-intel-gpu
+Description: modelbox intel gpu device SDK
+Version: @MODELBOX_VERSION_STRING@
+Libs: -L${libdir} -lmodelbox-device-intel-gpu
+Cflags: -I${includedir}

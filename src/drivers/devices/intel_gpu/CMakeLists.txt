@@ -15,26 +15,15 @@
 
 cmake_minimum_required(VERSION 3.10)
 
-project(modelbox-device)
+project(modelbox-drivers-intel-gpu)
 
 if(${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_BINARY_DIR})
     message(FATAL_ERROR "Do not build in source directory!")
 endif()
 
-if(ACL_FOUND AND DSMI_FOUND)
-    add_subdirectory(ascend)
-endif()
+subdirlist(SUBDIRS ${CMAKE_CURRENT_SOURCE_DIR} "CMakeLists.txt")
 
-add_subdirectory(cpu)
+include_directories(${INTELGPU_INCLUDE_DIR})
 
-if(CUDA_FOUND)
-    add_subdirectory(cuda)
-endif()
-
-if(ROCKCHIP_FOUND)
-    add_subdirectory(rockchip)
-endif()
-
-if(INTELGPU_FOUND)
-    add_subdirectory(intel_gpu)
-endif()
+add_subdirectory(core)
+add_subdirectory(flowunit)
