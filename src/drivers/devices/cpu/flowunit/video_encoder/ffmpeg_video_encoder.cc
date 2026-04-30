@@ -24,9 +24,6 @@ modelbox::Status FfmpegVideoEncoder::Init(int32_t width, int32_t height,
                                           const AVRational &frame_rate,
                                           uint64_t bit_rate,
                                           const std::string &encoder_name) {
-#if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(58, 9, 100)
-  av_register_all();
-#endif
   auto *codec = avcodec_find_encoder_by_name(encoder_name.c_str());
   if (codec == nullptr) {
     MBLOG_ERROR << "Find encoder failed, encoder name:" << encoder_name;

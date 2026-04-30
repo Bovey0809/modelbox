@@ -25,9 +25,6 @@ extern "C" {
 
 modelbox::Status FfmpegWriter::Open(const std::string &format_name,
                           const std::string &destination_url) {
-#if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(58, 9, 100)
-  av_register_all();
-#endif
   auto ret = avformat_network_init();
   if (ret < 0) {
     GET_FFMPEG_ERR(ret, ffmpeg_err);

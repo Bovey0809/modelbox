@@ -19,6 +19,11 @@
 #define MODELBOX_FLOWUNIT_FFMPEG_MUXER_H_
 
 #include <modelbox/base/status.h>
+
+extern "C" {
+#include <libavcodec/avcodec.h>
+}
+
 #include <memory>
 #include <string>
 #include "ffmpeg_writer.h"
