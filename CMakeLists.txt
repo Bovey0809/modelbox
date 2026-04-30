@@ -89,6 +89,8 @@ find_package(JNI)
 find_package(Java)
 find_package(ROCKCHIP)
 find_package(DLENGINE)
+find_package(INTELGPU)
+find_package(OPENVINO)
 
 add_subdirectory(thirdparty)
 add_subdirectory(src)
