@@ -3,24 +3,36 @@
 End-to-end ModelBox demo: video in, YOLO26n detection on the Arc, annotated
 video out.
 
-## Pipeline
+## Pipeline (Python-free, all C++)
 
 ```
-video_input -> demuxer -> decoder -> resize(640) -> packed_planar_transpose
-   -> normalize(/255) -> yolo26_detect (intel_gpu, openvino) -> yolo26_post
-   -> video_encoder
+video_input -> demuxer
+            -> video_decoder    [intel_gpu, h264_qsv]
+            -> resize(640)
+            -> packed_planar_transpose
+            -> normalize(/255)
+            -> yolo26_detect    [intel_gpu, openvino, yolo26n.onnx]
+            -> yolo26_post      [cpu, C++, OpenCV]
+            -> video_encoder    [intel_gpu, h264_qsv]
 ```
 
-`yolo26_detect` is a TOML-only flow unit that loads `yolo26n.onnx` via the
-new OpenVINO inference engine and dispatches to OpenVINO's `GPU` plugin
-(Level Zero -> Intel Arc).
+The Arc A770 carries hardware H.264 decode (QSV), inference (OpenVINO GPU
+plugin via Level Zero), and hardware H.264 encode (QSV). The CPU only
+handles the cheap preprocess (resize / transpose / normalize) and
+post-process (anchor-free decode + NMS + cv::rectangle). No Python
+interpreter is loaded at runtime.
 
 ## Host prerequisites
 
 ```bash
-sudo apt install libze-dev intel-level-zero-gpu-dev openvino
-pip install ultralytics
+sudo apt install libze-dev intel-level-zero-gpu-dev openvino libmfxgen1 \
+                 intel-media-va-driver-non-free
+pip install ultralytics  # one-time, only for exporting the ONNX model
 ```
+
+`libmfxgen1` (Intel oneVPL GPU runtime) is required for the QSV codecs to
+create an MFX session; without it `h264_qsv` etc. fail with
+`MFX_ERR_DEVICE_FAILED (-9)`.
 
 ## Build and install
 
