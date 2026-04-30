@@ -59,3 +59,31 @@ intel_gpu_top                                                           # GPU ut
 The ModelBox log line `openvino: loaded ... on device GPU` confirms the
 Arc plugin was selected. To force CPU fallback for comparison, change
 `device=intel_gpu` to `device=cpu` in the graph TOML.
+
+## Verified runtime behavior (from this branch's build verification)
+
+After a successful build on Ubuntu 26.04 with OpenVINO 2024.6, `modelbox-tool driver -info -details` over the new driver paths reports:
+
+```
+Device Information:
+  name: 0  type: intel_gpu  description: Intel GPU device (Arc / DG2 via Level Zero).
+
+Driver Information:
+  device-intel-gpu      type: intel_gpu  class: DRIVER-DEVICE
+  openvino_inference    type: cpu        class: DRIVER-INFERENCE
+  openvino_inference    type: intel_gpu  class: DRIVER-INFERENCE
+```
+
+A standalone OpenVINO C++ probe on this machine reports:
+
+```
+available_devices: CPU GPU
+  GPU: Intel(R) Arc(TM) A770 Graphics (dGPU)
+```
+
+If OpenVINO is installed from the .tgz tarball rather than apt, set
+`LD_LIBRARY_PATH` so the bundled TBB resolves at runtime:
+
+```bash
+export LD_LIBRARY_PATH=$OPENVINO_ROOT/runtime/lib/intel64:$OPENVINO_ROOT/runtime/3rdparty/tbb/lib
+```
