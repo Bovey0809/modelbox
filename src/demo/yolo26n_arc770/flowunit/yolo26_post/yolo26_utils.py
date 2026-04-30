@@ -43,7 +43,8 @@ def nms(boxes, scores, iou_thr):
     return keep
 
 
-def postprocess_anchor_free(predictions, num_classes, conf_thr, iou_thr, ratio):
+def postprocess_anchor_free(predictions, num_classes, conf_thr, iou_thr,
+                            scale_x, scale_y):
     """Decode + NMS for Ultralytics anchor-free output.
 
     Args:
@@ -54,7 +55,9 @@ def postprocess_anchor_free(predictions, num_classes, conf_thr, iou_thr, ratio):
         num_classes: number of class channels.
         conf_thr: minimum max-class score to keep.
         iou_thr: IoU threshold for NMS.
-        ratio: scale to map back to original image (= min(net/orig)).
+        scale_x, scale_y: factors to map back to original image. For the
+            ModelBox resize flowunit (non-aspect-preserving stretch),
+            scale_x = orig_w / net_w, scale_y = orig_h / net_h.
 
     Returns:
         np.ndarray of shape [K, 6]: x1,y1,x2,y2,score,label, in original
@@ -77,11 +80,10 @@ def postprocess_anchor_free(predictions, num_classes, conf_thr, iou_thr, ratio):
     cls_inds = cls_inds[valid]
 
     boxes_xyxy = np.empty_like(boxes)
-    boxes_xyxy[:, 0] = boxes[:, 0] - boxes[:, 2] / 2.0
-    boxes_xyxy[:, 1] = boxes[:, 1] - boxes[:, 3] / 2.0
-    boxes_xyxy[:, 2] = boxes[:, 0] + boxes[:, 2] / 2.0
-    boxes_xyxy[:, 3] = boxes[:, 1] + boxes[:, 3] / 2.0
-    boxes_xyxy /= ratio
+    boxes_xyxy[:, 0] = (boxes[:, 0] - boxes[:, 2] / 2.0) * scale_x
+    boxes_xyxy[:, 1] = (boxes[:, 1] - boxes[:, 3] / 2.0) * scale_y
+    boxes_xyxy[:, 2] = (boxes[:, 0] + boxes[:, 2] / 2.0) * scale_x
+    boxes_xyxy[:, 3] = (boxes[:, 1] + boxes[:, 3] / 2.0) * scale_y
 
     keep = nms(boxes_xyxy, cls_scores, iou_thr)
     if not keep:

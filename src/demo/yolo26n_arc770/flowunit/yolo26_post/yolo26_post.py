@@ -57,13 +57,17 @@ class Yolo26Post(modelbox.FlowUnit):
             channels = 4 + self.num_classes
             feat_data = feat_data.reshape((channels, -1)).transpose()
 
-            ratio = min(self.net_h / height, self.net_w / width)
+            # ModelBox 'resize' is a non-aspect-preserving stretch from
+            # (height, width) -> (net_h, net_w), so x and y scales differ.
+            scale_x = width / self.net_w
+            scale_y = height / self.net_h
             bboxes = postprocess_anchor_free(
                 feat_data,
                 self.num_classes,
                 self.conf_thre,
                 self.iou_thre,
-                ratio,
+                scale_x,
+                scale_y,
             )
             if bboxes is not None and len(bboxes) > 0:
                 img_out = draw_bbox(img_data, bboxes)
