@@ -18,6 +18,7 @@
 
 #include <modelbox/base/log.h>
 
+#include <memory>
 #include <utility>
 
 OpenVINOInferenceFlowUnit::OpenVINOInferenceFlowUnit(std::string target_device)
@@ -27,7 +28,7 @@ OpenVINOInferenceFlowUnit::~OpenVINOInferenceFlowUnit() = default;
 
 modelbox::Status OpenVINOInferenceFlowUnit::Open(
     const std::shared_ptr<modelbox::Configuration> &opts) {
-  infer_ = std::make_unique<OpenVINOInference>(target_device_);
+  infer_.reset(new OpenVINOInference(target_device_));
   return infer_->Open(opts, GetFlowUnitDesc());
 }
 

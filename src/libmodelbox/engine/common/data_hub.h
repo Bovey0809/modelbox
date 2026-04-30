@@ -97,7 +97,7 @@ class DataHub {
 class PortCompare {
  public:
   bool operator()(const std::shared_ptr<PriorityPort>& left,
-                  const std::shared_ptr<PriorityPort>& right);
+                  const std::shared_ptr<PriorityPort>& right) const;
 };
 
 /**

@@ -71,7 +71,7 @@ std::shared_ptr<NodeBase> PriorityPort::GetNode() const {
 }
 
 bool PortCompare::operator()(const std::shared_ptr<PriorityPort>& left,
-                             const std::shared_ptr<PriorityPort>& right) {
+                             const std::shared_ptr<PriorityPort>& right) const {
   if (left->port_ == right->port_) {
     return false;
   }
