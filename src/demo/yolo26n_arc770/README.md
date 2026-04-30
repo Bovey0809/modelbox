@@ -1,0 +1,61 @@
+# YOLO26n on Intel Arc A770 (OpenVINO)
+
+End-to-end ModelBox demo: video in, YOLO26n detection on the Arc, annotated
+video out.
+
+## Pipeline
+
+```
+video_input -> demuxer -> decoder -> resize(640) -> packed_planar_transpose
+   -> normalize(/255) -> yolo26_detect (intel_gpu, openvino) -> yolo26_post
+   -> video_encoder
+```
+
+`yolo26_detect` is a TOML-only flow unit that loads `yolo26n.onnx` via the
+new OpenVINO inference engine and dispatches to OpenVINO's `GPU` plugin
+(Level Zero -> Intel Arc).
+
+## Host prerequisites
+
+```bash
+sudo apt install libze-dev intel-level-zero-gpu-dev openvino
+pip install ultralytics
+```
+
+## Build and install
+
+```bash
+mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release -DWITH_ALL_DEMO=ON
+make -j$(nproc)
+make install
+```
+
+The build invokes `scripts/export_yolo26n.py` once to produce `yolo26n.onnx`
+beside `yolo26_detect.toml`. The script tries `yolo26n.pt` first and falls
+back to `yolov8n.pt` if v26 weights are not yet published; the post-processor
+handles either drop-in (Ultralytics v8 / v10 / v11 / v26 share the anchor-free
+`[B, 4 + num_classes, N]` output format).
+
+## Run
+
+```bash
+modelbox-tool flow run \
+    -name yolo26n_arc770 \
+    -graph /usr/local/share/modelbox/demo/yolo26n_arc770/graph/yolo26n_arc770.toml
+```
+
+Produces `/tmp/yolo26n_arc770_result.mp4`. Supply your own input video by
+overriding `source_url` in the graph TOML, or pre-stage one at the path the
+`@DEMO_VIDEO_DIR@/yolo26n_test_video.mp4` placeholder resolves to.
+
+## Verifying the Arc is actually engaged
+
+```bash
+python -c 'import openvino as ov; print(ov.Core().available_devices)'  # must include "GPU"
+intel_gpu_top                                                           # GPU util spikes during the run
+```
+
+The ModelBox log line `openvino: loaded ... on device GPU` confirms the
+Arc plugin was selected. To force CPU fallback for comparison, change
+`device=intel_gpu` to `device=cpu` in the graph TOML.

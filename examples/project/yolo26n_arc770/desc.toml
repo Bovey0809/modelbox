@@ -1,0 +1,2 @@
+name = "yolo26n arc770"
+desc = "YOLO26n object detection running on Intel Arc A770 via the OpenVINO inference engine."
