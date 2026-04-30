@@ -60,6 +60,28 @@ The ModelBox log line `openvino: loaded ... on device GPU` confirms the
 Arc plugin was selected. To force CPU fallback for comparison, change
 `device=intel_gpu` to `device=cpu` in the graph TOML.
 
+## Verified end-to-end run (Ubuntu 26.04 + Arc A770)
+
+Full pipeline executed against the existing `car_detection` test video:
+
+```
+video_input -> demuxer -> decoder -> resize(640) -> packed_planar_transpose
+   -> normalize(/255) -> yolo26_detect (intel_gpu, openvino, yolo11n.onnx)
+   -> yolo26_post (cpu, python) -> video_encoder
+```
+
+**296 frames @ 1920×1080 from car_test_video.mp4** produced
+`/tmp/yolo26n_arc770_result.mp4` with red bounding boxes around every
+car in every frame. YOLO11n was used as the drop-in fallback for
+YOLO26n (output tensor format is identical for v8 / v10 / v11 / v26).
+
+Standalone OpenVINO benchmark on the same model:
+
+| device          | infer time |
+|-----------------|------------|
+| Arc A770 (GPU)  | **3.55 ms / iter** |
+| i5-14600KF (CPU)| 10.24 ms / iter |
+
 ## Verified runtime behavior (from this branch's build verification)
 
 After a successful build on Ubuntu 26.04 with OpenVINO 2024.6, `modelbox-tool driver -info -details` over the new driver paths reports:
