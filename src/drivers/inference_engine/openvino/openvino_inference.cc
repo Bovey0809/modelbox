@@ -20,6 +20,7 @@
 
 #include <utility>
 
+#include "openvino/core/preprocess/pre_post_process.hpp"
 #include "virtualdriver_inference.h"
 
 OpenVINOInference::OpenVINOInference(std::string target_device)
@@ -88,8 +89,32 @@ modelbox::Status OpenVINOInference::Open(
     return {modelbox::STATUS_BADCONF, "openvino: model entry is empty"};
   }
 
+  // Optional built-in preprocessing baked into the model graph.
+  preprocess_mode_ = opts->GetString("preprocess", "");
+
   try {
     auto model = core_.read_model(model_entry_);
+
+    if (preprocess_mode_ == "ultralytics_image") {
+      // Bake BGR uint8 NHWC at any resolution -> resize -> /255 -> NCHW float
+      // into the compiled graph itself, so the host pushes raw decoded frames
+      // and OpenVINO does the rest on whichever device runs inference.
+      ov::preprocess::PrePostProcessor ppp(model);
+      auto& in = ppp.input();
+      in.tensor()
+          .set_element_type(ov::element::u8)
+          .set_layout("NHWC")
+          .set_spatial_dynamic_shape();
+      in.preprocess()
+          .convert_element_type(ov::element::f32)
+          .resize(ov::preprocess::ResizeAlgorithm::RESIZE_LINEAR)
+          .scale(255.0F);
+      in.model().set_layout("NCHW");
+      model = ppp.build();
+      MBLOG_INFO << "openvino: preprocess=ultralytics_image (resize + /255 + "
+                    "NHWC->NCHW baked into graph)";
+    }
+
     compiled_model_ = core_.compile_model(model, target_device_);
     infer_request_ = compiled_model_.create_infer_request();
   } catch (const std::exception &e) {
@@ -131,11 +156,28 @@ modelbox::Status OpenVINOInference::SetInputs(
     // Wrap the host-resident input buffer as an ov::Tensor without copy.
     // OpenVINO's GPU plugin internally uploads to the Arc device.
     auto element_type = inputs[i].get_element_type();
-    auto shape = inputs[i].get_partial_shape().is_static()
-                     ? inputs[i].get_shape()
-                     : ov::Shape{};
-    if (shape.empty()) {
-      // For dynamic shapes, derive batch=1 + per-element bytes from buffer.
+    ov::Shape shape;
+
+    if (preprocess_mode_ == "ultralytics_image") {
+      // Buffer is BGR uint8 HWC at the source frame's native resolution; the
+      // graph has been wrapped to accept that and resize/normalize/transpose
+      // on the device. Build a [1, H, W, 3] u8 tensor over the buffer bytes.
+      int32_t width = 0, height = 0, channel = 3;
+      buffer->Get("width", width);
+      buffer->Get("height", height);
+      buffer->Get("channel", channel);
+      if (width <= 0 || height <= 0 || channel != 3) {
+        return {modelbox::STATUS_FAULT,
+                "openvino: ultralytics_image preprocess needs width/height "
+                "image meta with 3 channels on input port " + port_name};
+      }
+      shape = ov::Shape{1, static_cast<size_t>(height),
+                        static_cast<size_t>(width),
+                        static_cast<size_t>(channel)};
+    } else if (inputs[i].get_partial_shape().is_static()) {
+      shape = inputs[i].get_shape();
+    } else {
+      // Generic dynamic path: 1D over the buffer bytes.
       size_t total_bytes = buffer->GetBytes();
       size_t element_bytes = OvElementSize(element_type);
       if (element_bytes == 0) {

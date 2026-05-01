@@ -133,6 +133,35 @@ The pose / track pipelines look faster because the people-detection
 sample is 768×432 (~6× smaller area), so the codec/preprocess shrinks
 proportionally; inference time is essentially identical.
 
+### Tried-and-rejected: OpenVINO PrePostProcessor (preprocess baked into the graph)
+
+OpenVINO can wrap the model with a `PrePostProcessor` that accepts BGR
+uint8 NHWC at any resolution and bakes resize / `/255` / NHWC→NCHW into
+the compiled graph itself. The `OpenVINOInference` engine supports this
+opt-in via `[config] preprocess = "ultralytics_image"` on the inference
+flow unit's TOML. Standalone benchmarks show it works and is fast:
+
+| device   | model + bake     | infer @ 1080×1920 u8 NHWC |
+|----------|------------------|--------------------------:|
+| Arc A770 | yolo11n + PPP    | **3.92 ms / iter**        |
+| CPU      | yolo11n + PPP    | 12.17 ms / iter           |
+
+But when wired into the modelbox graph (drop `resize` / `transpose` /
+`normalize`, feed `videodecoder:out_video_frame -> yolo_detect:input`),
+throughput collapses to **3.5 fps on Arc** and **<0.1 fps on CPU** —
+~30× worse than the explicit-flowunit pipeline. The bottleneck is *not*
+in OpenVINO (standalone is 4 ms/iter); it's the interaction between
+`set_input_tensor` on a fresh per-frame `ov::Tensor` pointer and
+modelbox's stream-flow scheduling. Each frame appears to trigger major
+work somewhere in the host glue.
+
+Recommendation: **keep the explicit `resize` / `packed_planar_transpose`
+/ `normalize` flow units on CPU** for now. They run in parallel with
+inference on the Arc and the whole pipeline still clears 90 fps at
+1080p. The `preprocess = "ultralytics_image"` config knob is left in
+the engine as a future hook — useful for direct embedded use of
+`OpenVINOInference` outside the modelbox stream graph.
+
 ## Verified runtime behavior (from this branch's build verification)
 
 After a successful build on Ubuntu 26.04 with OpenVINO 2024.6, `modelbox-tool driver -info -details` over the new driver paths reports:

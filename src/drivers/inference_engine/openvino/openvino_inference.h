@@ -64,6 +64,11 @@ class OpenVINOInference {
 
   std::string target_device_;
   std::string model_entry_;
+  // When set to "ultralytics_image" the model is wrapped with an OpenVINO
+  // PrePostProcessor that accepts BGR uint8 NHWC frames at any resolution
+  // and bakes resize / scale(/255) / NHWC->NCHW into the GPU graph itself.
+  // Empty string = no built-in preprocess (caller must pre-shape the buffer).
+  std::string preprocess_mode_;
   ov::Core core_;
   ov::CompiledModel compiled_model_;
   ov::InferRequest infer_request_;
