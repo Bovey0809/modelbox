@@ -87,12 +87,51 @@ video_input -> demuxer -> decoder -> resize(640) -> packed_planar_transpose
 car in every frame. YOLO11n was used as the drop-in fallback for
 YOLO26n (output tensor format is identical for v8 / v10 / v11 / v26).
 
-Standalone OpenVINO benchmark on the same model:
+## Speed profile
 
-| device          | infer time |
-|-----------------|------------|
-| Arc A770 (GPU)  | **3.55 ms / iter** |
-| i5-14600KF (CPU)| 10.24 ms / iter |
+Benchmarks taken on the same Arc A770 + i5-14600KF host. Inference numbers
+are 50 iters after 5 warm-ups; pipeline numbers are wall-clock from
+`modelbox-tool flow -run` launch until the output mp4 contains every
+expected frame.
+
+### Per-model OpenVINO inference
+
+| model         | input         | output                     | CPU p50 | Arc p50 | speedup |
+|---------------|---------------|----------------------------|---------|---------|---------|
+| yolo11n       | 3×640×640     | 84×8400                    | 9.92 ms | **3.19 ms** | 3.1× |
+| yolo11n-seg   | 3×640×640     | 116×8400 + 32×160²         | 13.89 ms | **3.46 ms** | 4.0× |
+| yolo11n-pose  | 3×640×640     | 56×8400                    | 11.04 ms | **3.38 ms** | 3.3× |
+| yolo11n-obb   | 3×640×640     | 20×8400                    | 9.91 ms | **3.10 ms** | 3.2× |
+| yolo11n-cls   | 3×224×224     | 1000                       | **0.76 ms** | 0.96 ms | 0.79× |
+
+`yolo11n-cls` is the only one where the CPU wins — at 224² the model is
+too small to amortise the host↔Arc round-trip. For maximum cls throughput
+keep `device=cpu` for that node.
+
+### End-to-end pipeline FPS
+
+Each pipeline runs the full graph: `video_input -> demuxer -> video_decoder
+(intel_gpu, h264_qsv) -> resize -> transpose -> normalize -> *_detect
+(intel_gpu, openvino) -> *_post (cpu, C++) -> video_encoder (intel_gpu,
+h264_qsv)`.
+
+| task     | source resolution | frames | wall  | pipeline FPS | ms/frame |
+|----------|-------------------|--------|-------|--------------|----------|
+| detect   | 1920×1080         | 292    | 2.67 s | **109**       | 9.2 |
+| segment  | 1920×1080         | 292    | 3.18 s | 92            | 10.9 |
+| obb      | 1920×1080         | 292    | 2.69 s | 109           | 9.2 |
+| classify | 1920×1080         | 292    | 2.14 s | 136           | 7.3 |
+| pose     | 768×432           | 592    | 3.74 s | **158**       | 6.3 |
+| track    | 768×432           | 592    | 3.21 s | 184           | 5.4 |
+
+At 1080p every dense-prediction task clears 90 fps — comfortably above
+real-time on a single Arc. Per-frame budget of ~9.2 ms breaks down as
+~3.2 ms inference + ~6 ms for QSV decode/encode + preprocess + C++ post.
+Inference is no longer the bottleneck — codec and memory copies are.
+
+The pose / track pipelines look faster because the people-detection
+sample is 768×432 (~6× smaller area), so the codec/preprocess shrinks
+proportionally; inference time is essentially identical.
 
 ## Verified runtime behavior (from this branch's build verification)
 
