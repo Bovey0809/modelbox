@@ -20,6 +20,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>

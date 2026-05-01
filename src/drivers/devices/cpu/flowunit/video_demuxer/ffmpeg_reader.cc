@@ -39,9 +39,6 @@ static int CheckTimeout(void *ctx) {
 }
 
 modelbox::Status FfmpegReader::Open(const std::string &source_url) {
-#if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(58, 9, 100)
-  av_register_all();
-#endif
   format_ctx_ = nullptr;
 
   auto ret = avformat_network_init();

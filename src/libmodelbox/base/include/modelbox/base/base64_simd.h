@@ -20,6 +20,8 @@
 
 #include <modelbox/base/status.h>
 
+#include <cstdint>
+
 namespace modelbox {
 
 /**

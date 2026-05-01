@@ -34,3 +34,7 @@ endif()
 if(ROCKCHIP_FOUND)
     add_subdirectory(rockchip)
 endif()
+
+if(INTELGPU_FOUND)
+    add_subdirectory(intel_gpu)
+endif()

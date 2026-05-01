@@ -20,6 +20,11 @@
 
 #include <modelbox/base/status.h>
 
+extern "C" {
+#include <libavcodec/avcodec.h>
+#include <libavcodec/bsf.h>
+}
+
 #include <functional>
 #include <memory>
 #include <vector>
