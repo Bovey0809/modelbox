@@ -15,7 +15,7 @@ port over without code changes.
 | `device-apple-silicon`                   | new        | one device id; CPU + GPU + ANE via Core ML  |
 | `inference_engine/coreml/`               | new        | `.mlpackage` / `.mlmodel` loader            |
 | `coreml_inference` flowunit              | new        | `device=apple_silicon`, `virtual_type=coreml` |
-| `apple_silicon_yolo` demo + smoke test   | new        | mirrors `yolo26n_arc770`                    |
+| `apple_silicon_yolo` demo + smoke test   | new        | six DAGs: det / obb / pose / seg / cls / track |
 | Linux/aarch64 + Linux/x86_64 builds      | unaffected | every change gated by `__APPLE__` / `APPLE` |
 
 Skipped on macOS: `manager` daemon (signalfd / capabilities), `server`
@@ -67,13 +67,50 @@ python test/function/apple_silicon_yolo/test_apple_silicon_yolo.py \
 ## Performance
 
 Measured on an M4 Pro MacBook Pro (Darwin 26.4.1, 14-core CPU, integrated
-GPU + ANE, 24 GB unified memory) running the demo graph against
+GPU + ANE, 24 GB unified memory) running the demo graphs against
 `/Users/houbowei/Downloads/Feishu20260424-154315.mp4` (1280x720 h264,
 3137 frames, 104.6 s, 12 MB).
 
-```
-TOTAL flow wall time:    7.78 s for 3137 frames  =  403 fps end-to-end
+The DAGs are **Python-free at runtime** — no flowunit dylib links Python,
+the Python virtualdriver isn't built on Apple, and the graph TOMLs only
+reference C++ flowunits. Python is only used at *build time* to run the
+Ultralytics export scripts that produce the `.mlpackage` files.
 
+### All six tasks, end-to-end
+
+```
+task   wall_s frames  fps  cpu_s   par  detect_ms  post_ms  enc_ms  dec_ms  rsz_ms
+────────────────────────────────────────────────────────────────────────────────────
+det      6.94   3138  452  18.23  2.63x      2.18     0.17    1.94    1.24    0.21
+obb      6.81   3138  461  17.83  2.62x      1.85     0.19    2.09    1.25    0.22
+pose     6.84   3138  459  18.23  2.67x      1.98     0.21    2.09    1.24    0.21
+seg      7.74   3138  406  19.53  2.52x      2.42     0.88    1.49    1.22    0.20
+cls      6.75   3138  465  11.99  1.78x      0.22     0.15    2.09    1.18    0.08
+track    7.03   3138  447  17.36  2.47x      2.20     0.14    1.63    1.27    0.21
+```
+
+* **End-to-end throughput is 400–470 fps for every task** on the M4 Pro,
+  well above the 30 fps the source video runs at.
+* **Inference is the critical path for det / obb / pose / seg / track**
+  (1.85–2.42 ms/frame on Core ML); every other stage runs concurrently
+  inside that window.
+* **cls is the outlier — 0.22 ms/frame inference** at 224×224 input
+  vs 640×640 for the others. The bottleneck shifts to videoencoder
+  (2.09 ms/frame), so cls gets the lowest realized parallelism (1.78×)
+  even though it's the highest fps (465).
+* **seg costs the most CPU time per frame on the post side**
+  (0.88 ms/frame) because of the 32-prototype × 160×160 mask matmul +
+  per-instance cv::resize + cv::addWeighted overlay; even so, the mask
+  decode parallelizes with inference and the wall-time delta vs det is
+  only 0.8 s.
+* **Detection, OBB, pose, and track all sustain ~2 ms inference.**
+  OBB is fastest (1.85 ms) because its 20-channel head is lighter than
+  detection's post-NMS [1, 300, 6] decoder; track reuses the detection
+  model so its inference number matches det.
+
+The single-detection wall breakdown for context:
+
+```
 flowunit                              calls  frames  cpu_ms  ms/frm  span_s
 ───────────────────────────────────────────────────────────────────────────
 yolo_detect (apple_silicon, coreml)      99    3137  7674.7   2.45    7.69
@@ -88,22 +125,15 @@ sum CPU time                                   3138 17638.8 ms
 parallelism (sum CPU / wall):  2.27x
 ```
 
-* **Critical path is inference.** `yolo_detect` occupies a 7.69 s span out
-  of the 7.78 s total wall window — every other stage finishes inside the
-  inference window. The next-longest stage is videoencoder at 1.47 ms/frame.
-* **CoreML 2.45 ms/frame vs Ultralytics' 6.2 ms/frame** on the same
+* **CoreML 2.18 ms/frame vs Ultralytics' 6.2 ms/frame** on the same
   `.mlpackage`: modelbox dispatches `Process()` calls into the device's
   thread pool so multiple frames are in flight, and `MLComputeUnitsAll`
   spreads them across CPU + GPU + ANE simultaneously. Ultralytics' Python
   predict loop is strictly sequential.
-* **Sequential single-stream latency** is ~5.5 ms/frame
-  (decode 1.25 + resize 0.21 + infer 2.45 + post 0.16 + encode 1.47).
-  Pipelining yields 403 fps measured = 2.27x the sequential 180 fps;
-  inference is the bottleneck, decode/encode are well under 2 ms/frame.
 
 ### Reproduce
 
-Add a `[profile]` block to the graph TOML and re-run:
+Add a `[profile]` block to any of the six graph TOMLs and re-run:
 
 ```toml
 [profile]
@@ -114,8 +144,15 @@ dir = "/tmp/mb_profile"
 ```
 
 ```bash
+# Pick whichever task graph you want to profile:
 PROFILE_PATH=/tmp/mb_profile \
-  modelbox-tool flow -run /usr/local/share/modelbox/demo/apple_silicon_yolo/graph/apple_silicon_yolo.toml
+  modelbox-tool flow -run \
+    /usr/local/share/modelbox/demo/apple_silicon_yolo/graph/apple_silicon_yolo.toml         # det
+    # apple_silicon_yolo_obb.toml    # OBB
+    # apple_silicon_yolo_pose.toml   # pose
+    # apple_silicon_yolo_seg.toml    # segmentation
+    # apple_silicon_yolo_cls.toml    # classification
+    # apple_silicon_yolo_track.toml  # detection + greedy-IoU tracking
 ```
 
 This emits `/tmp/mb_profile/trace_<ts>.json` (Chrome-tracing format).
