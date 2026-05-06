@@ -30,7 +30,7 @@ find_package(Git)
 # 下载googletest
 ExternalProject_Add(
   GoogleTest
-  URL               @LOCAL_PACKAGE_PATH@/googletest-release-1.11.0.tar.gz
+  URL               @LOCAL_PACKAGE_PATH@/googletest-release-1.11.0.zip
   SOURCE_DIR        ${THIRDPARTY_DOWNLOAD_DIR}/googletest
   CONFIGURE_COMMAND ""
   BUILD_COMMAND     ""
@@ -85,7 +85,7 @@ ExternalProject_Add(
 # nlohmann json
 ExternalProject_Add(
   nlohmann
-  URL               @LOCAL_PACKAGE_PATH@/json-v3.11.2.tar.gz
+  URL               @LOCAL_PACKAGE_PATH@/json-v3.11.2.zip
   SOURCE_DIR         ${THIRDPARTY_DOWNLOAD_DIR}/nlohmann
   CONFIGURE_COMMAND ""
   BUILD_COMMAND     ""
@@ -96,7 +96,7 @@ ExternalProject_Add(
 # cpp-httplib
 ExternalProject_Add(
   cpp-httplib
-  URL               @LOCAL_PACKAGE_PATH@/cpp-httplib-0.12.6.tar.gz
+  URL               @LOCAL_PACKAGE_PATH@/cpp-httplib-0.12.6.zip
   SOURCE_DIR        ${THIRDPARTY_DOWNLOAD_DIR}/cpp-httplib
   CONFIGURE_COMMAND ${THIRDPARTY_DOWNLOAD_DIR}/cpp-httplib/split.py -o ${THIRDPARTY_DOWNLOAD_DIR}/cpp-httplib/build
   BUILD_COMMAND     ""
