@@ -18,12 +18,18 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#ifdef __linux__
 #include <linux/capability.h>
+#include <sys/prctl.h>
+#endif
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#include <limits.h>
+#endif
 #include <pwd.h>
 #include <signal.h>
 #include <stdio.h>
 #include <string.h>
-#include <sys/prctl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -39,10 +45,12 @@ namespace modelbox {
 
 static int kPidFileFd = -1;
 
+#ifdef __linux__
 extern "C" int capget(struct __user_cap_header_struct *header,
                       struct __user_cap_data_struct *cap);
 extern "C" int capset(struct __user_cap_header_struct *header,
                       struct __user_cap_data_struct *cap);
+#endif
 
 std::once_flag root_dir_flag;
 
@@ -51,15 +59,20 @@ const std::string &modelbox_root_dir() {
 
   std::call_once(root_dir_flag, []() {
     char buff[PATH_MAX] = {0};
-    int len;
-
-    len = readlink("/proc/self/exe", buff, sizeof(buff) - 1);
+#ifdef __APPLE__
+    uint32_t size = sizeof(buff);
+    if (_NSGetExecutablePath(buff, &size) != 0) {
+      rootdir = "";
+      return;
+    }
+#else
+    int len = readlink("/proc/self/exe", buff, sizeof(buff) - 1);
     if (len < 0) {
       rootdir = "";
       return;
     }
-
     buff[len] = {0};
+#endif
     rootdir = modelbox::GetDirName(buff);
     rootdir = rootdir + "../../../../";
     rootdir = PathCanonicalize(rootdir);
@@ -304,6 +317,7 @@ Status ChownToUser(const std::string &user, const std::string &path) {
 }
 
 Status RunAsUser(const std::string &user) {
+#ifdef __linux__
   struct __user_cap_header_struct header;
 #ifdef _LINUX_CAPABILITY_VERSION_3
   struct __user_cap_data_struct caps[_LINUX_CAPABILITY_U32S_3];
@@ -351,6 +365,12 @@ Status RunAsUser(const std::string &user) {
   }
 
   return STATUS_OK;
+#else
+  // Darwin has no Linux-style capabilities API. modelbox-tool privilege
+  // drop is a Linux-only concern; on macOS we keep the current uid.
+  (void)user;
+  return STATUS_OK;
+#endif
 }
 
 Status SplitIPPort(const std::string &host, std::string &ip,

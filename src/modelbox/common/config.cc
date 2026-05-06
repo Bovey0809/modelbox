@@ -16,9 +16,17 @@
 
 #include "modelbox/common/config.h"
 
+#ifdef __linux__
 #include <linux/limits.h>
+#else
+#include <limits.h>
+#endif
 #include <modelbox/base/configuration.h>
 #include <unistd.h>
+
+#ifndef PATH_MAX
+#define PATH_MAX 4096
+#endif
 
 namespace modelbox {
 

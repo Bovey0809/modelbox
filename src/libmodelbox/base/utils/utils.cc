@@ -126,7 +126,7 @@ Status ListFiles(const std::string &path, const std::string &filter,
 
 size_t FindTheEarliestFileIndex(std::vector<std::string> &listfiles) {
   struct stat buffer;
-  __time_t min_sec = 0x7fffffff;
+  time_t min_sec = 0x7fffffff;
   size_t index = 0;
   for (size_t i = 0; i < listfiles.size(); ++i) {
     if (stat(listfiles[i].c_str(), &buffer) == -1) {
@@ -135,8 +135,8 @@ size_t FindTheEarliestFileIndex(std::vector<std::string> &listfiles) {
       continue;
     }
 
-    if (buffer.st_mtim.tv_sec < min_sec) {
-      min_sec = buffer.st_mtim.tv_sec;
+    if (buffer.st_mtime < min_sec) {
+      min_sec = buffer.st_mtime;
       index = i;
     }
   }
@@ -565,8 +565,16 @@ Status HardeningSSL(SSL_CTX *ctx) {
 }
 
 std::string StrError(int errnum) {
-  char buf[32];
+  char buf[64];
+  buf[0] = '\0';
+#if defined(__APPLE__) || (defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE >= 200112L && !defined(_GNU_SOURCE))
+  // POSIX strerror_r returns int; the message is written into buf.
+  (void)strerror_r(errnum, buf, sizeof(buf));
+  return std::string(buf);
+#else
+  // GNU strerror_r returns char*, possibly different from buf.
   return strerror_r(errnum, buf, sizeof(buf));
+#endif
 }
 
 void GetCompiledTime(struct tm *compiled_time) {

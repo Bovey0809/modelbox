@@ -19,6 +19,7 @@
 #include <dlfcn.h>
 #include <fcntl.h>
 #include <poll.h>
+#include <signal.h>
 #include <stdio.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -589,7 +590,7 @@ Status Drivers::Scan(const std::string &path, const std::string &filter) {
   }
 
   if (!S_ISDIR(s.st_mode)) {
-    last_modify_time_sum_ += s.st_mtim.tv_sec;
+    last_modify_time_sum_ += s.st_mtime;
     auto status = Add(path);
     if (status == STATUS_OK) {
       drivers_scan_result_info_->GetLoadSuccessInfo().push_back(path);
@@ -620,7 +621,7 @@ Status Drivers::Scan(const std::string &path, const std::string &filter) {
     if (S_ISLNK(buf.st_mode)) {
       continue;
     }
-    last_modify_time_sum_ += buf.st_mtim.tv_sec;
+    last_modify_time_sum_ += buf.st_mtime;
 
     auto result = Add(driver_file);
     if (result == STATUS_OK) {
@@ -666,7 +667,7 @@ Status Drivers::WriteScanInfo(const std::string &scan_info_path,
   if (stat(DEFAULT_LD_CACHE, &buffer) == -1) {
     dump_json["ld_cache_time"] = 0;
   } else {
-    dump_json["ld_cache_time"] = buffer.st_mtim.tv_sec;
+    dump_json["ld_cache_time"] = buffer.st_mtime;
   }
 
   dump_json["check_code"] = check_code;
@@ -822,7 +823,7 @@ bool Drivers::CheckPathAndMagicCode() {
     return false;
   }
 
-  if (ld_cache_time != buffer.st_mtim.tv_sec) {
+  if (ld_cache_time != buffer.st_mtime) {
     return false;
   }
 
@@ -838,7 +839,7 @@ bool Drivers::CheckPathAndMagicCode() {
     }
 
     if (!S_ISDIR(s.st_mode)) {
-      check_sum += s.st_mtim.tv_sec;
+      check_sum += s.st_mtime;
       continue;
     }
 
@@ -872,7 +873,7 @@ bool Drivers::CheckPathAndMagicCode() {
         return false;
       }
 
-      check_sum += buf.st_mtim.tv_sec;
+      check_sum += buf.st_mtime;
     }
   }
   auto check_code = GenerateKey(check_sum);

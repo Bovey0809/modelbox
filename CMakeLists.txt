@@ -69,6 +69,12 @@ set(MODELBOX_TOP_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 
 find_package(CPPREST)
 find_package(OpenSSL REQUIRED)
+if(OPENSSL_INCLUDE_DIR)
+    # Brew openssl on macOS isn't in the default clang include path; threads
+    # of headers (modelbox/base/utils.h, log.cc, ...) include <openssl/*.h>
+    # directly without per-target wiring, so propagate it globally.
+    include_directories(${OPENSSL_INCLUDE_DIR})
+endif()
 find_package(Boost COMPONENTS system)
 find_package(CUDA 10.0)
 find_package(CUDACUDA)
@@ -91,10 +97,18 @@ find_package(ROCKCHIP)
 find_package(DLENGINE)
 find_package(INTELGPU)
 find_package(OPENVINO)
+find_package(COREML)
 
 add_subdirectory(thirdparty)
 add_subdirectory(src)
-add_subdirectory(examples)
+if(NOT APPLE)
+    # examples/ runs setup.sh templates that assume GNU coreutils. Skip on
+    # Darwin until the templates are made portable.
+    add_subdirectory(examples)
+endif()
 add_subdirectory(test EXCLUDE_FROM_ALL)
 add_subdirectory(docs)
-add_subdirectory(package)
+if(NOT APPLE)
+    # package/ generates deb/rpm artifacts that don't apply on macOS.
+    add_subdirectory(package)
+endif()

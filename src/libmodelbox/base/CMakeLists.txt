@@ -40,7 +40,9 @@ set_property(TARGET ${LIBMODELBOX_BASE_LIBRARY} PROPERTY POSITION_INDEPENDENT_CO
 
 target_link_libraries(${LIBMODELBOX_BASE_LIBRARY} ${HUAWEI_SECURE_C_LIBRARIES})
 target_link_libraries(${LIBMODELBOX_BASE_LIBRARY} pthread)
-target_link_libraries(${LIBMODELBOX_BASE_LIBRARY} rt)
+if(NOT APPLE)
+    target_link_libraries(${LIBMODELBOX_BASE_LIBRARY} rt)
+endif()
 target_link_libraries(${LIBMODELBOX_BASE_LIBRARY} dl)
 
 set_target_properties(${LIBMODELBOX_BASE_LIBRARY} PROPERTIES OUTPUT_NAME "modelbox-base")

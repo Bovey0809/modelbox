@@ -27,7 +27,10 @@ if (STANDALONE)
 endif()
 
 add_subdirectory(common)
-add_subdirectory(manager)
+if(NOT APPLE)
+    # Manager is a Linux daemon: signalfd / inotify / proc / capabilities.
+    add_subdirectory(manager)
+endif()
 add_subdirectory(server)
 add_subdirectory(serving)
 add_subdirectory(tool)

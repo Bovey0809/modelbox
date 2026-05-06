@@ -65,5 +65,13 @@ if(OS_LINUX)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wl,--export-dynamic")
 endif(OS_LINUX)
 
+if(APPLE)
+    # Driver .dylibs sit next to the binary in the install layout; resolve them
+    # via @loader_path so dlopen finds them without DYLD_LIBRARY_PATH.
+    set(CMAKE_INSTALL_RPATH "@loader_path/../lib")
+    set(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
+    set(CMAKE_MACOSX_RPATH ON)
+endif()
+
 set(CUDA_NVCC_FLAGS "-Xcompiler -Wall,-fno-strict-aliasing,${CMAKE_CXX_FLAGS_DEBUG}" CACHE INTERNAL "") 
 set(CUDA_PROPAGATE_HOST_FLAGS OFF CACHE INTERNAL "")
