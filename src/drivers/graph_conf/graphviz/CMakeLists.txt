@@ -28,6 +28,14 @@ include_directories(${CMAKE_CURRENT_LIST_DIR})
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 include_directories(${LIBMODELBOX_INCLUDE})
 include_directories(${LIBMODELBOX_BASE_INCLUDE})
+
+pkg_check_modules(LIBCGRAPH IMPORTED_TARGET libcgraph)
+if(LIBCGRAPH_FOUND)
+    include_directories(${LIBCGRAPH_INCLUDE_DIRS})
+    # Brew installs <graphviz/cgraph.h> at <prefix>/include/graphviz; the
+    # pkg-config -I points at the parent so #include <graphviz/cgraph.h>
+    # resolves to ${LIBCGRAPH_INCLUDE_DIRS}/graphviz/cgraph.h.
+endif()
  
 set(LIBMODELBOX_GRAPHCONF_GRAPHVIZ_SHARED libmodelbox-${UNIT_GRAPHCONF}-${UNIT_NAME}-shared)
 set(LIBMODELBOX_GRAPHCONF_GRAPHVIZ_INCLUDE ${CMAKE_CURRENT_LIST_DIR})
@@ -42,7 +50,11 @@ set_target_properties(${LIBMODELBOX_GRAPHCONF_GRAPHVIZ_SHARED} PROPERTIES
 target_link_libraries(${LIBMODELBOX_GRAPHCONF_GRAPHVIZ_SHARED} pthread)
 target_link_libraries(${LIBMODELBOX_GRAPHCONF_GRAPHVIZ_SHARED} rt)
 target_link_libraries(${LIBMODELBOX_GRAPHCONF_GRAPHVIZ_SHARED} dl)
-target_link_libraries(${LIBMODELBOX_GRAPHCONF_GRAPHVIZ_SHARED} cgraph)
+if(LIBCGRAPH_FOUND)
+    target_link_libraries(${LIBMODELBOX_GRAPHCONF_GRAPHVIZ_SHARED} PkgConfig::LIBCGRAPH)
+else()
+    target_link_libraries(${LIBMODELBOX_GRAPHCONF_GRAPHVIZ_SHARED} cgraph)
+endif()
 target_link_libraries(${LIBMODELBOX_GRAPHCONF_GRAPHVIZ_SHARED} ${LIBMODELBOX_SHARED})
  
 set_target_properties(${LIBMODELBOX_GRAPHCONF_GRAPHVIZ_SHARED} PROPERTIES OUTPUT_NAME "modelbox-${UNIT_GRAPHCONF}-${UNIT_NAME}")

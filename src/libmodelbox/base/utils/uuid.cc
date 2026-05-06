@@ -18,11 +18,27 @@
 
 #include "modelbox/base/utils.h"
 
+#ifdef __APPLE__
+#include <uuid/uuid.h>
+#else
 #define UUID_GENERATION_PATH "/proc/sys/kernel/random/uuid"
+#endif
 
 namespace modelbox {
 
 Status GetUUID(std::string* uuid) {
+#ifdef __APPLE__
+  // Darwin has no /proc/sys/kernel/random/uuid; libuuid (in libSystem) is the
+  // portable replacement. uuid_generate_random hits /dev/urandom and produces
+  // an RFC 4122 v4 UUID; uuid_unparse emits the standard 36-char canonical
+  // form, matching what /proc/.../uuid yields on Linux.
+  uuid_t bin;
+  uuid_generate_random(bin);
+  char tmp[UUID_LENGTH];
+  uuid_unparse(bin, tmp);
+  *uuid = std::string(tmp);
+  return STATUS_OK;
+#else
   char tmp[UUID_LENGTH];
   FILE* fd = fopen(UUID_GENERATION_PATH, "r");
   if (fd == nullptr) {
@@ -38,5 +54,6 @@ Status GetUUID(std::string* uuid) {
   tmp[UUID_LENGTH - 1] = '\0';
   *uuid = std::string(tmp);
   return STATUS_OK;
+#endif
 }
 }  // namespace modelbox
