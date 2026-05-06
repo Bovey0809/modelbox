@@ -1,5 +1,5 @@
 #
-# Copyright 2021 The Modelbox Project Authors. All Rights Reserved.
+# Copyright 2026 The Modelbox Project Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,30 +15,13 @@
 
 cmake_minimum_required(VERSION 3.10)
 
-project(modelbox-device)
+project(modelbox-drivers-apple-silicon-flowunit)
 
 if(${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_BINARY_DIR})
     message(FATAL_ERROR "Do not build in source directory!")
 endif()
 
-if(ACL_FOUND AND DSMI_FOUND)
-    add_subdirectory(ascend)
-endif()
-
-add_subdirectory(cpu)
-
-if(CUDA_FOUND)
-    add_subdirectory(cuda)
-endif()
-
-if(ROCKCHIP_FOUND)
-    add_subdirectory(rockchip)
-endif()
-
-if(INTELGPU_FOUND)
-    add_subdirectory(intel_gpu)
-endif()
-
-if(APPLE AND COREML_FOUND)
-    add_subdirectory(apple_silicon)
-endif()
+subdirlist(SUBDIRS ${CMAKE_CURRENT_SOURCE_DIR} "CMakeLists.txt")
+foreach(subdir ${SUBDIRS})
+    add_subdirectory(${subdir})
+endforeach()
