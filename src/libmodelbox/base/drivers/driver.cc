@@ -19,6 +19,7 @@
 #include <dlfcn.h>
 #include <fcntl.h>
 #include <poll.h>
+#include <signal.h>
 #include <stdio.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -111,6 +112,14 @@ int SubProcessWaitAndLog(int fd) {
 template <typename func, typename... ts>
 Status SubProcessRun(func &&fun, ts &&...params) {
   const char *enable_debug = getenv("MODELBOX_DEBUG_DRIVER_SCAN");
+#ifdef __APPLE__
+  // Apple's Objective-C runtime aborts on fork-without-exec when frameworks
+  // (Core ML, Foundation, AppKit, ...) have run any +initialize in the parent.
+  // The scan child dlopens drivers, several of which link Cocoa frameworks
+  // (e.g. modelbox-engine-coreml). Run scan in-process on macOS — the loss
+  // of crash isolation is acceptable for a single-user dev tool.
+  return fun(params...);
+#endif
   if (enable_debug == nullptr) {
     int unused __attribute__((unused));
     int fd[2] = {-1, -1};
@@ -589,7 +598,7 @@ Status Drivers::Scan(const std::string &path, const std::string &filter) {
   }
 
   if (!S_ISDIR(s.st_mode)) {
-    last_modify_time_sum_ += s.st_mtim.tv_sec;
+    last_modify_time_sum_ += s.st_mtime;
     auto status = Add(path);
     if (status == STATUS_OK) {
       drivers_scan_result_info_->GetLoadSuccessInfo().push_back(path);
@@ -620,7 +629,7 @@ Status Drivers::Scan(const std::string &path, const std::string &filter) {
     if (S_ISLNK(buf.st_mode)) {
       continue;
     }
-    last_modify_time_sum_ += buf.st_mtim.tv_sec;
+    last_modify_time_sum_ += buf.st_mtime;
 
     auto result = Add(driver_file);
     if (result == STATUS_OK) {
@@ -666,7 +675,7 @@ Status Drivers::WriteScanInfo(const std::string &scan_info_path,
   if (stat(DEFAULT_LD_CACHE, &buffer) == -1) {
     dump_json["ld_cache_time"] = 0;
   } else {
-    dump_json["ld_cache_time"] = buffer.st_mtim.tv_sec;
+    dump_json["ld_cache_time"] = buffer.st_mtime;
   }
 
   dump_json["check_code"] = check_code;
@@ -822,7 +831,7 @@ bool Drivers::CheckPathAndMagicCode() {
     return false;
   }
 
-  if (ld_cache_time != buffer.st_mtim.tv_sec) {
+  if (ld_cache_time != buffer.st_mtime) {
     return false;
   }
 
@@ -838,7 +847,7 @@ bool Drivers::CheckPathAndMagicCode() {
     }
 
     if (!S_ISDIR(s.st_mode)) {
-      check_sum += s.st_mtim.tv_sec;
+      check_sum += s.st_mtime;
       continue;
     }
 
@@ -872,7 +881,7 @@ bool Drivers::CheckPathAndMagicCode() {
         return false;
       }
 
-      check_sum += buf.st_mtim.tv_sec;
+      check_sum += buf.st_mtime;
     }
   }
   auto check_code = GenerateKey(check_sum);
@@ -885,11 +894,24 @@ bool Drivers::CheckPathAndMagicCode() {
 
 Status Drivers::InnerScan() {
   Status ret = STATUS_NOTFOUND;
+  // Driver shared-object suffix differs by platform: ELF on Linux uses .so,
+  // Mach-O on macOS uses .dylib. Both globs are passed so a single binary
+  // produced by a fat install can scan a heterogeneous lib dir if one ever
+  // exists.
+  static const char *kDriverGlobs[] = {
+      "libmodelbox-*.so*",
+#ifdef __APPLE__
+      "libmodelbox-*.dylib*",
+#endif
+  };
   for (const auto &dir : driver_dirs_) {
     MBLOG_INFO << "Scan dir: " << dir;
-    ret = Scan(dir, "libmodelbox-*.so*");
-    if (!ret && ret != STATUS_NOTFOUND) {
-      MBLOG_WARN << "scan " << dir << " failed, " << ret.WrapErrormsgs();
+    for (const auto *glob : kDriverGlobs) {
+      ret = Scan(dir, glob);
+      if (!ret && ret != STATUS_NOTFOUND) {
+        MBLOG_WARN << "scan " << dir << " (" << glob << ") failed, "
+                   << ret.WrapErrormsgs();
+      }
     }
     ret = STATUS_OK;
   }

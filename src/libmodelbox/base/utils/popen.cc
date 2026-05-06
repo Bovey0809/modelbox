@@ -17,15 +17,33 @@
 #include <fcntl.h>
 #include <modelbox/base/popen.h>
 #include <modelbox/base/utils.h>
+#include <signal.h>
 #include <sys/poll.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
+#ifdef __APPLE__
+#include <crt_externs.h>
+// Darwin doesn't expose `environ` to dylibs; _NSGetEnviron returns its address.
+#define environ (*_NSGetEnviron())
+#endif
+
 #include <chrono>
 #include <iostream>
 
 namespace modelbox {
+
+#ifdef __APPLE__
+// Darwin has no execvpe. Set our env in the child then exec via PATH.
+static int execvpe_compat(const char *file, char *const argv[],
+                          char *const envp[]) {
+  // Replacing environ before execvp gives the child the desired env.
+  environ = const_cast<char **>(envp);
+  return execvp(file, argv);
+}
+#define execvpe execvpe_compat
+#endif
 
 constexpr int POPEN_ERROR = -1;
 constexpr int POPEN_EOF = -2;
@@ -232,7 +250,12 @@ errout:
 
 void Popen::CloseAllParentFds(int keep_fd) {
   std::vector<std::string> files;
+#ifdef __APPLE__
+  // Darwin doesn't have /proc; /dev/fd exposes the same per-process fd table.
+  ListFiles("/dev/fd", "*", &files);
+#else
   ListFiles("/proc/self/fd", "*", &files);
+#endif
   for (auto &file : files) {
     int port = std::stoi(GetBaseName(file));
     if (port == STDIN_FILENO || port == STDOUT_FILENO ||

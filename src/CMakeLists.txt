@@ -26,8 +26,13 @@ set(MODELBOX_DEMO_INSTALL_DIR "${CMAKE_INSTALL_FULL_DATAROOTDIR}/modelbox/demo")
 
 add_subdirectory(libmodelbox)
 add_subdirectory(drivers)
-add_subdirectory(develop)
-add_subdirectory(python)
-add_subdirectory(java)
+if(NOT APPLE)
+    # develop/python/java carry Linux-tuned build steps not yet ported to macOS.
+    # The rest of the pipeline (libmodelbox, drivers, modelbox-tool, demo) is
+    # what's needed to run the apple_silicon CoreML graph end-to-end.
+    add_subdirectory(develop)
+    add_subdirectory(python)
+    add_subdirectory(java)
+endif()
 add_subdirectory(modelbox)
 add_subdirectory(demo)

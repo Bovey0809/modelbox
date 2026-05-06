@@ -18,12 +18,18 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#ifdef __linux__
 #include <linux/capability.h>
+#include <sys/prctl.h>
+#endif
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#include <limits.h>
+#endif
 #include <pwd.h>
 #include <signal.h>
 #include <stdio.h>
 #include <string.h>
-#include <sys/prctl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -39,10 +45,12 @@ namespace modelbox {
 
 static int kPidFileFd = -1;
 
+#ifdef __linux__
 extern "C" int capget(struct __user_cap_header_struct *header,
                       struct __user_cap_data_struct *cap);
 extern "C" int capset(struct __user_cap_header_struct *header,
                       struct __user_cap_data_struct *cap);
+#endif
 
 std::once_flag root_dir_flag;
 
@@ -51,15 +59,20 @@ const std::string &modelbox_root_dir() {
 
   std::call_once(root_dir_flag, []() {
     char buff[PATH_MAX] = {0};
-    int len;
-
-    len = readlink("/proc/self/exe", buff, sizeof(buff) - 1);
+#ifdef __APPLE__
+    uint32_t size = sizeof(buff);
+    if (_NSGetExecutablePath(buff, &size) != 0) {
+      rootdir = "";
+      return;
+    }
+#else
+    int len = readlink("/proc/self/exe", buff, sizeof(buff) - 1);
     if (len < 0) {
       rootdir = "";
       return;
     }
-
     buff[len] = {0};
+#endif
     rootdir = modelbox::GetDirName(buff);
     rootdir = rootdir + "../../../../";
     rootdir = PathCanonicalize(rootdir);
@@ -162,6 +175,11 @@ int modelbox_sig_register(const int sig_list[], int sig_num,
   return 0;
 }
 
+// The CPU register snapshot below targets glibc's ucontext_t shape. macOS
+// laysout uc_mcontext as struct __darwin_mcontext64* with named fields, so
+// the Linux register-dump path is gated behind __linux__. On Apple we keep
+// the public symbol but write a one-line marker — sufficient for crash logs.
+#if defined(__linux__)
 #if defined(__aarch64__)
 enum {
   REG_R0 = 0,
@@ -253,6 +271,22 @@ int modelbox_cpu_register_data(char *buf, int buf_size, ucontext_t *ucontext) {
 
   return 0;
 }
+#else
+int modelbox_cpu_register_data(char *buf, int buf_size, ucontext_t *ucontext) {
+  if (buf == nullptr || buf_size <= 0 || ucontext == nullptr) {
+    return -1;
+  }
+  // Darwin: ucontext_t::uc_mcontext is a pointer to __darwin_mcontext64. We
+  // skip the architectural register dump rather than embed the Mach struct
+  // layout here — modelbox-tool's signal handler only logs this on crash.
+  int len = snprintf_s(buf, buf_size, buf_size - 1,
+                       "register data unavailable (darwin)\n");
+  if (len < 0 || len >= buf_size) {
+    return -1;
+  }
+  return 0;
+}
+#endif
 
 Status GetUidGid(const std::string &user, uid_t &uid, gid_t &gid) {
   struct passwd *result = nullptr;
@@ -304,6 +338,7 @@ Status ChownToUser(const std::string &user, const std::string &path) {
 }
 
 Status RunAsUser(const std::string &user) {
+#ifdef __linux__
   struct __user_cap_header_struct header;
 #ifdef _LINUX_CAPABILITY_VERSION_3
   struct __user_cap_data_struct caps[_LINUX_CAPABILITY_U32S_3];
@@ -351,6 +386,12 @@ Status RunAsUser(const std::string &user) {
   }
 
   return STATUS_OK;
+#else
+  // Darwin has no Linux-style capabilities API. modelbox-tool privilege
+  // drop is a Linux-only concern; on macOS we keep the current uid.
+  (void)user;
+  return STATUS_OK;
+#endif
 }
 
 Status SplitIPPort(const std::string &host, std::string &ip,

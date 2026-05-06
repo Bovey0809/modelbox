@@ -38,3 +38,7 @@ endif()
 if(INTELGPU_FOUND)
     add_subdirectory(intel_gpu)
 endif()
+
+if(APPLE AND COREML_FOUND)
+    add_subdirectory(apple_silicon)
+endif()

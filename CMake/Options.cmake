@@ -65,5 +65,33 @@ if(OS_LINUX)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wl,--export-dynamic")
 endif(OS_LINUX)
 
+if(APPLE)
+    # Driver .dylibs sit next to the binary in the install layout; resolve them
+    # via @loader_path so dlopen finds them without DYLD_LIBRARY_PATH.
+    set(CMAKE_INSTALL_RPATH "@loader_path/../lib")
+    set(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
+    set(CMAKE_MACOSX_RPATH ON)
+
+    # ~80 CMakeLists.txt files do `target_link_libraries(<tgt> rt)` — librt is
+    # glibc-only. Same for `-latomic`. On Darwin both functions live in
+    # libSystem / libc++abi already, so define empty INTERFACE targets that
+    # the bare names resolve to. Avoids editing every device/flowunit file.
+    if(NOT TARGET rt)
+        add_library(rt INTERFACE)
+    endif()
+    if(NOT TARGET atomic)
+        add_library(atomic INTERFACE)
+    endif()
+
+    # Linux ld treats undefined symbols in -shared libraries as warnings;
+    # ld64 errors. Plugins (modelbox-plugin) and drivers are dlopened into a
+    # process that already has libmodelbox-shared loaded, so let unresolved
+    # symbols be looked up at load time, matching Linux semantics.
+    set(CMAKE_SHARED_LINKER_FLAGS
+        "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-undefined,dynamic_lookup")
+    set(CMAKE_MODULE_LINKER_FLAGS
+        "${CMAKE_MODULE_LINKER_FLAGS} -Wl,-undefined,dynamic_lookup")
+endif()
+
 set(CUDA_NVCC_FLAGS "-Xcompiler -Wall,-fno-strict-aliasing,${CMAKE_CXX_FLAGS_DEBUG}" CACHE INTERNAL "") 
 set(CUDA_PROPAGATE_HOST_FLAGS OFF CACHE INTERNAL "")

@@ -21,8 +21,8 @@ set(UNIT_NAME "openvino_inference")
 
 project(modelbox-flowunit-${UNIT_DEVICE}-${UNIT_NAME})
 
-if (NOT OPENVINO_FOUND)
-    message(STATUS "Not found openvino, disable ${UNIT_NAME} flowunit")
+if (NOT OPENVINO_FOUND OR APPLE)
+    message(STATUS "Not found openvino (or on Apple), disable ${UNIT_NAME} flowunit")
     return()
 endif()
 

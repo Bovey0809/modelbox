@@ -37,9 +37,16 @@
   "${MODELBOX_ROOT}/var/log/modelbox/modelbox-tool.log"
 
 static int g_sig_list[] = {
-    SIGIO,   SIGPWR,    SIGSTKFLT, SIGPROF, SIGINT,  SIGTERM,
-    SIGBUS,  SIGVTALRM, SIGTRAP,   SIGXCPU, SIGXFSZ, SIGILL,
-    SIGABRT, SIGFPE,    SIGSEGV,   SIGQUIT, SIGSYS,
+    SIGIO,
+#ifdef SIGPWR
+    SIGPWR,
+#endif
+#ifdef SIGSTKFLT
+    SIGSTKFLT,
+#endif
+    SIGPROF, SIGINT,  SIGTERM, SIGBUS,  SIGVTALRM, SIGTRAP,
+    SIGXCPU, SIGXFSZ, SIGILL,  SIGABRT, SIGFPE,    SIGSEGV,
+    SIGQUIT, SIGSYS,
 };
 
 static int g_sig_num = sizeof(g_sig_list) / sizeof(g_sig_list[0]);

@@ -27,9 +27,15 @@ if (STANDALONE)
 endif()
 
 add_subdirectory(common)
-add_subdirectory(manager)
-add_subdirectory(server)
-add_subdirectory(serving)
+if(NOT APPLE)
+    # Manager is a Linux daemon: signalfd / inotify / proc / capabilities.
+    add_subdirectory(manager)
+    # server depends on manager_monitor_client.h; serving + server hard-code
+    # SIGPWR/SIGSTKFLT in their signal lists. Out of scope for the macOS port —
+    # modelbox-tool runs DAGs locally without the server.
+    add_subdirectory(server)
+    add_subdirectory(serving)
+endif()
 add_subdirectory(tool)
 
 set(MODELBOX_PROG_INCLUDE ${CMAKE_CURRENT_LIST_DIR})
