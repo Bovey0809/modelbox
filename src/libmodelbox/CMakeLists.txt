@@ -53,14 +53,17 @@ set_target_properties(libmodelbox-shared PROPERTIES
     VERSION ${MODELBOX_VERSION_MAJOR}.${MODELBOX_VERSION_MINOR}.${MODELBOX_VERSION_PATCH}
 )
 
-target_link_libraries(libmodelbox-static ssl)
-target_link_libraries(libmodelbox-static crypto)
+if(TARGET OpenSSL::SSL)
+    target_link_libraries(libmodelbox-static OpenSSL::SSL OpenSSL::Crypto)
+    target_link_libraries(libmodelbox-shared OpenSSL::SSL OpenSSL::Crypto)
+else()
+    target_link_libraries(libmodelbox-static ssl crypto)
+    target_link_libraries(libmodelbox-shared ssl crypto)
+endif()
 target_link_libraries(libmodelbox-static pthread)
 target_link_libraries(libmodelbox-static dl)
 target_link_libraries(libmodelbox-static ${HUAWEI_SECURE_C_LIBRARIES})
 
-target_link_libraries(libmodelbox-shared ssl)
-target_link_libraries(libmodelbox-shared crypto)
 target_link_libraries(libmodelbox-shared pthread)
 target_link_libraries(libmodelbox-shared dl)
 target_link_libraries(libmodelbox-shared ${HUAWEI_SECURE_C_LIBRARIES})

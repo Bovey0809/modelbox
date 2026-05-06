@@ -22,7 +22,11 @@ if(${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_BINARY_DIR})
     message(FATAL_ERROR "Do not build in source directory!")
 endif()
 
-add_subdirectory(python)
-add_subdirectory(java)
+if(NOT APPLE)
+    # Python and Java virtual drivers depend on the per-language flowunit
+    # subtrees that aren't built on macOS yet.
+    add_subdirectory(python)
+    add_subdirectory(java)
+endif()
 add_subdirectory(inference)
 add_subdirectory(yolobox)

@@ -175,6 +175,11 @@ int modelbox_sig_register(const int sig_list[], int sig_num,
   return 0;
 }
 
+// The CPU register snapshot below targets glibc's ucontext_t shape. macOS
+// laysout uc_mcontext as struct __darwin_mcontext64* with named fields, so
+// the Linux register-dump path is gated behind __linux__. On Apple we keep
+// the public symbol but write a one-line marker — sufficient for crash logs.
+#if defined(__linux__)
 #if defined(__aarch64__)
 enum {
   REG_R0 = 0,
@@ -266,6 +271,22 @@ int modelbox_cpu_register_data(char *buf, int buf_size, ucontext_t *ucontext) {
 
   return 0;
 }
+#else
+int modelbox_cpu_register_data(char *buf, int buf_size, ucontext_t *ucontext) {
+  if (buf == nullptr || buf_size <= 0 || ucontext == nullptr) {
+    return -1;
+  }
+  // Darwin: ucontext_t::uc_mcontext is a pointer to __darwin_mcontext64. We
+  // skip the architectural register dump rather than embed the Mach struct
+  // layout here — modelbox-tool's signal handler only logs this on crash.
+  int len = snprintf_s(buf, buf_size, buf_size - 1,
+                       "register data unavailable (darwin)\n");
+  if (len < 0 || len >= buf_size) {
+    return -1;
+  }
+  return 0;
+}
+#endif
 
 Status GetUidGid(const std::string &user, uid_t &uid, gid_t &gid) {
   struct passwd *result = nullptr;
