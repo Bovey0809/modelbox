@@ -64,6 +64,85 @@ python test/function/apple_silicon_yolo/test_apple_silicon_yolo.py \
   /usr/local/share/modelbox/demo/apple_silicon_yolo
 ```
 
+## Performance
+
+Measured on an M4 Pro MacBook Pro (Darwin 26.4.1, 14-core CPU, integrated
+GPU + ANE, 24 GB unified memory) running the demo graph against
+`/Users/houbowei/Downloads/Feishu20260424-154315.mp4` (1280x720 h264,
+3137 frames, 104.6 s, 12 MB).
+
+```
+TOTAL flow wall time:    7.78 s for 3137 frames  =  403 fps end-to-end
+
+flowunit                              calls  frames  cpu_ms  ms/frm  span_s
+───────────────────────────────────────────────────────────────────────────
+yolo_detect (apple_silicon, coreml)      99    3137  7674.7   2.45    7.69
+videoencoder (cpu, h264_videotoolbox)    99    3137  4613.1   1.47    7.50
+videodecoder (cpu, ffmpeg)              100    3138  3931.6   1.25    7.48
+image_resize (cpu, opencv-mb)            99    3137   657.2   0.21    7.52
+yolo_post    (cpu, opencv-mb draw)       99    3137   507.6   0.16    7.62
+videodemuxer (cpu, ffmpeg)             3138    3138   254.5   0.08    7.29
+video_input  (cpu)                        1       1     0.0   0.05    0.00
+───────────────────────────────────────────────────────────────────────────
+sum CPU time                                   3138 17638.8 ms
+parallelism (sum CPU / wall):  2.27x
+```
+
+* **Critical path is inference.** `yolo_detect` occupies a 7.69 s span out
+  of the 7.78 s total wall window — every other stage finishes inside the
+  inference window. The next-longest stage is videoencoder at 1.47 ms/frame.
+* **CoreML 2.45 ms/frame vs Ultralytics' 6.2 ms/frame** on the same
+  `.mlpackage`: modelbox dispatches `Process()` calls into the device's
+  thread pool so multiple frames are in flight, and `MLComputeUnitsAll`
+  spreads them across CPU + GPU + ANE simultaneously. Ultralytics' Python
+  predict loop is strictly sequential.
+* **Sequential single-stream latency** is ~5.5 ms/frame
+  (decode 1.25 + resize 0.21 + infer 2.45 + post 0.16 + encode 1.47).
+  Pipelining yields 403 fps measured = 2.27x the sequential 180 fps;
+  inference is the bottleneck, decode/encode are well under 2 ms/frame.
+
+### Reproduce
+
+Add a `[profile]` block to the graph TOML and re-run:
+
+```toml
+[profile]
+profile = true
+trace = true
+session = true
+dir = "/tmp/mb_profile"
+```
+
+```bash
+PROFILE_PATH=/tmp/mb_profile \
+  modelbox-tool flow -run /usr/local/share/modelbox/demo/apple_silicon_yolo/graph/apple_silicon_yolo.toml
+```
+
+This emits `/tmp/mb_profile/trace_<ts>.json` (Chrome-tracing format).
+Drop the file on `chrome://tracing` (or `https://ui.perfetto.dev`) for
+an interactive flame view. The aggregate table above comes from a small
+Python script that parses the JSON and groups events by `tid` (flowunit)
+— the modelbox `Profiler` class records one `TraceSlice` per `Process()`
+call, batched by `FlowUnitGroup::StartTrace` (so each trace event's
+`args.batch_size` is the number of `Process()` calls aggregated, not a
+within-call batch).
+
+### Async vs sync
+
+* **Pipeline is async.** Modelbox's `DeviceExecute()` dispatches each
+  flowunit's `Process()` call onto the device's thread pool. NORMAL
+  flowunits (`image_resize`, `yolo_detect`, `yolo26_post`) scale wider
+  because each call is independent; STREAM flowunits (`video_demuxer`,
+  `video_decoder`, `video_encoder`) serialize per-stream because they
+  hold codec context across calls. Overlapping spans in the trace —
+  yolo_detect's 7.69 s overlapping with videoencoder's 7.50 s,
+  videodecoder's 7.48 s, etc. — are realized parallelism.
+* **Per-call is sync.** The CoreML flowunit's `Infer()` blocks on
+  `[model predictionFromFeatures:provider error:&err]`; Core ML
+  pipelines that single inference internally across CPU/GPU/ANE but
+  doesn't return until the prediction is complete. `MLComputeUnitsAll`
+  is set in `coreml_inference.mm`'s Open path.
+
 ## Architecture notes
 
 * **Memory model**: Apple Silicon's unified memory means CPU, GPU, and
