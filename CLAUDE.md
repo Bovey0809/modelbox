@@ -79,3 +79,4 @@ When adding a new flowunit: create a directory under the appropriate `flowunit/`
 - C++ formatting via `.clang-format`; lint via `.clang-tidy`. Run a clang-tidy build before sending non-trivial C++ changes — CI rejects new clang-tidy warnings.
 - Optional features must degrade gracefully when their `find_package` fails (the rest of the tree builds without TensorRT, Ascend, etc.).
 - `docs/Design.md` and `docs/Goal.md` are the canonical internal design notes; consult them when changing engine semantics.
+- `docs/macos-coreml.md` documents the Apple Silicon / Core ML port on the `feature/macos-coreml-integration` branch — what builds on Darwin, the Darwin OS adapter under `src/libmodelbox/base/arch/darwin/`, and the brew opencv install\_names workaround on macOS 26.
