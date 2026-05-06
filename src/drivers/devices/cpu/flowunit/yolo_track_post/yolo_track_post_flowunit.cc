@@ -249,19 +249,43 @@ modelbox::Status YoloTrackPostFlowUnit::Process(
       return {modelbox::STATUS_FAULT, "yolo_track_post: bad image meta"};
     }
 
-    const int channels = 4 + num_classes_;
     const auto feat_bytes = feat_buf->GetBytes();
-    if (feat_bytes % (sizeof(float) * channels) != 0) {
-      return {modelbox::STATUS_FAULT, "yolo_track_post: bad feat size"};
-    }
-    const int num_anchors =
-        static_cast<int>(feat_bytes / (sizeof(float) * channels));
     const auto *feat = static_cast<const float *>(feat_buf->ConstData());
     const float scale_x = static_cast<float>(width) / static_cast<float>(net_w_);
     const float scale_y = static_cast<float>(height) / static_cast<float>(net_h_);
 
-    auto raw = Decode(feat, channels, num_anchors, scale_x, scale_y);
-    auto kept = Nms(std::move(raw));
+    // Two output layouts are accepted, same handling as yolo26_post:
+    //   pre-NMS [1, 4+nc, N]   — ONNX/OpenVINO export
+    //   post-NMS [1, K, 6]      — Ultralytics' default Core ML export bakes
+    //                             NMS into the model.
+    std::vector<Detection> kept;
+    const int pre_nms_channels = 4 + num_classes_;
+    const bool pre_nms_fits =
+        feat_bytes % (sizeof(float) * pre_nms_channels) == 0;
+    const bool post_nms_fits = feat_bytes % (sizeof(float) * 6) == 0;
+    if (pre_nms_fits) {
+      const int num_anchors =
+          static_cast<int>(feat_bytes / (sizeof(float) * pre_nms_channels));
+      auto raw = Decode(feat, pre_nms_channels, num_anchors, scale_x, scale_y);
+      kept = Nms(std::move(raw));
+    } else if (post_nms_fits) {
+      const int num_dets = static_cast<int>(feat_bytes / (sizeof(float) * 6));
+      kept.reserve(num_dets);
+      for (int d = 0; d < num_dets; ++d) {
+        const float *row = feat + d * 6;
+        if (row[4] < conf_threshold_) continue;
+        Detection det;
+        det.x1 = row[0] * scale_x;
+        det.y1 = row[1] * scale_y;
+        det.x2 = row[2] * scale_x;
+        det.y2 = row[3] * scale_y;
+        det.score = row[4];
+        det.label = static_cast<int>(row[5]);
+        kept.push_back(det);
+      }
+    } else {
+      return {modelbox::STATUS_FAULT, "yolo_track_post: bad feat size"};
+    }
     UpdateTracks(kept, state->tracks, state->next_id);
 
     auto out_buf = out_image->At(i);
