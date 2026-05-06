@@ -23,6 +23,14 @@ if (NOT OPENVINO_FOUND)
     return()
 endif()
 
+if (APPLE)
+    # OpenVINO 2026+ headers require C++17 (std::filesystem::path,
+    # is_same_v); modelbox sets CMAKE_CXX_STANDARD 11. The Core ML engine
+    # is the inference path on Apple Silicon; we don't need OpenVINO here.
+    message(STATUS "On Apple — Core ML is the inference path, disabling openvino common engine")
+    return()
+endif()
+
 file(GLOB_RECURSE MODELBOX_UNIT_SOURCE *.cpp *.cc *.c)
 
 include_directories(${CMAKE_CURRENT_LIST_DIR})

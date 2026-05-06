@@ -45,6 +45,15 @@ fi
 echo "[run] configuring modelbox against ${OPENCV_PREFIX}..."
 mkdir -p "${BUILD_DIR}"
 cd "${BUILD_DIR}"
+# Drop stale CMake cache when OpenCV_DIR changes, so cv-dependent flowunits
+# relink against the right opencv. Without this they pick up the previous
+# build's link line and reference a different OpenCV install.
+if [ -f CMakeCache.txt ] && \
+   ! grep -q "OpenCV_DIR.*${OPENCV_PREFIX}" CMakeCache.txt 2>/dev/null; then
+    echo "[run] OpenCV_DIR changed — wiping cmake cache"
+    rm -f CMakeCache.txt
+    rm -rf CMakeFiles
+fi
 cmake "${REPO_ROOT}" \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \

@@ -168,21 +168,55 @@ modelbox::Status Yolo26PostFlowUnit::Process(
     }
 
     const auto feat_bytes = feat_buf->GetBytes();
-    const int channels = 4 + num_classes_;
-    if (feat_bytes % (sizeof(float) * channels) != 0) {
-      MBLOG_ERROR << "yolo26_post: feat byte size " << feat_bytes
-                  << " not divisible by 4*(4+num_classes)";
-      return {modelbox::STATUS_FAULT, "yolo26_post: bad feat size"};
-    }
-    const int num_anchors =
-        static_cast<int>(feat_bytes / (sizeof(float) * channels));
-
     const auto *feat = static_cast<const float *>(feat_buf->ConstData());
     const float scale_x = static_cast<float>(width) / static_cast<float>(net_w_);
     const float scale_y = static_cast<float>(height) / static_cast<float>(net_h_);
 
-    auto raw = Decode(feat, channels, num_anchors, scale_x, scale_y);
-    auto kept = Nms(std::move(raw));
+    std::vector<Detection> kept;
+    // Two output layouts are accepted:
+    //   * pre-NMS [1, 4+nc, N] — the canonical Ultralytics ONNX/OpenVINO
+    //     export. We run Decode + Nms here.
+    //   * post-NMS [1, K, 6] — Ultralytics' default Core ML export bakes
+    //     in NMS and emits per-detection [x1, y1, x2, y2, score, class].
+    //     We just rescale the boxes from net_w_/net_h_ to image space.
+    const int pre_nms_channels = 4 + num_classes_;
+    const bool pre_nms_fits =
+        feat_bytes % (sizeof(float) * pre_nms_channels) == 0;
+    const bool post_nms_fits = feat_bytes % (sizeof(float) * 6) == 0;
+    if (pre_nms_fits) {
+      const int num_anchors =
+          static_cast<int>(feat_bytes / (sizeof(float) * pre_nms_channels));
+      auto raw = Decode(feat, pre_nms_channels, num_anchors, scale_x, scale_y);
+      kept = Nms(std::move(raw));
+    } else if (post_nms_fits) {
+      const int num_dets = static_cast<int>(feat_bytes / (sizeof(float) * 6));
+      kept.reserve(num_dets);
+      for (int d = 0; d < num_dets; ++d) {
+        const float *row = feat + d * 6;
+        float x1 = row[0];
+        float y1 = row[1];
+        float x2 = row[2];
+        float y2 = row[3];
+        float score = row[4];
+        int class_id = static_cast<int>(row[5]);
+        if (score < conf_threshold_) {
+          continue;
+        }
+        Detection det;
+        det.x1 = x1 * scale_x;
+        det.y1 = y1 * scale_y;
+        det.x2 = x2 * scale_x;
+        det.y2 = y2 * scale_y;
+        det.score = score;
+        det.label = class_id;
+        kept.push_back(det);
+      }
+    } else {
+      MBLOG_ERROR << "yolo26_post: feat byte size " << feat_bytes
+                  << " not divisible by 4*(4+num_classes)=" << pre_nms_channels
+                  << " or 4*6";
+      return {modelbox::STATUS_FAULT, "yolo26_post: bad feat size"};
+    }
 
     // Wrap input image bytes in a cv::Mat (no copy); copy into output buffer
     // and draw onto the copy. Avoids mutating the upstream buffer.
