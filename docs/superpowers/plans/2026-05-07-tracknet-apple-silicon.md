@@ -1,5 +1,7 @@
 # TrackNet on Apple Silicon Implementation Plan
 
+> **Status (2026-05-07):** SUPERSEDED IN PARTS. Implementation landed in commits `d3381c6..e35d21c`. Two intentional deviations from this plan: (1) `tracknet_frame_stacker.toml` and `tracknet_post.toml` were dropped — C++ flowunits in this codebase register via `MODELBOX_DRIVER_FLOWUNIT` inside the `.dylib`/`.so` and the driver loader globs both extensions, so per-flowunit TOMLs are extraneous; only the virtual `tracknet_deep` Core ML wrapper ships a TOML. (2) Library naming follows the project's `modelbox-unit-cpu-<name>` convention (not `modelbox-flowunit-cpu-<name>`). Smoke test ends in a known EOF deadlock at end-of-stream — see the spec's "Known issues" section.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add a standalone ModelBox graph that runs TrackNetDeep ball-tracking on Apple Silicon via Core ML, drawing the predicted ball position on each video frame.
