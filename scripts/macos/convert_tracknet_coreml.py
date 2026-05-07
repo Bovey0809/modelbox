@@ -79,7 +79,7 @@ def main() -> int:
         model_module = _import_model_module(repo)
 
         net = _build_model(model_module, args.variant, args.seq_len)
-        state = torch.load(args.checkpoint, map_location="cpu")
+        state = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
         net.load_state_dict(_unwrap(state))
         net.eval()
 
@@ -104,22 +104,28 @@ def main() -> int:
             convert_to="mlprogram",
         )
 
-        # Sanity check: PyTorch vs Core ML on 5 random tensors.
-        max_err = 0.0
-        for _ in range(5):
-            x = torch.randn(1, in_ch, args.height, args.width)
-            with torch.no_grad():
-                ref = net(x).numpy()
-            cm = mlmodel.predict({"frames": x.numpy()})["heatmaps"]
-            max_err = max(max_err, float(np.abs(ref - cm).max()))
-        print(f"max |torch - coreml| = {max_err:.4e}")
-        if max_err >= 1e-2:
-            raise SystemExit(f"conversion sanity check failed: max_err={max_err:.4e}")
-
         out = Path(args.out).resolve()
         if out.exists():
             subprocess.check_call(["rm", "-rf", str(out)])
         mlmodel.save(str(out))
+
+        # Sanity check: PyTorch vs Core ML on 5 random tensors.
+        # `predict` only works on macOS; on other platforms, skip gracefully.
+        try:
+            max_err = 0.0
+            for _ in range(5):
+                x = torch.randn(1, in_ch, args.height, args.width)
+                with torch.no_grad():
+                    ref = net(x).numpy()
+                cm = mlmodel.predict({"frames": x.numpy()})["heatmaps"]
+                max_err = max(max_err, float(np.abs(ref - cm).max()))
+            print(f"max |torch - coreml| = {max_err:.4e}")
+            if max_err >= 1e-2:
+                raise SystemExit(f"conversion sanity check failed: max_err={max_err:.4e}")
+        except SystemExit:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            print(f"sanity check skipped: {exc} (run on macOS to verify)")
 
         # Report size + content hash.
         total = 0
