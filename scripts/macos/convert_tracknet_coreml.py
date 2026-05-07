@@ -59,13 +59,23 @@ def main() -> int:
         choices=["ALL", "CPU_AND_NE", "CPU_AND_GPU", "CPU_ONLY"],
         default="ALL",
     )
+    ap.add_argument(
+        "--repo-dir",
+        default=None,
+        help="Path to a pre-cloned tracknet repo. If unset, clone from upstream.",
+    )
     args = ap.parse_args()
 
     import coremltools as ct  # imported here so --help works without coremltools installed
 
     with tempfile.TemporaryDirectory() as td:
-        repo = Path(td) / "tracknet"
-        subprocess.check_call(["git", "clone", "--depth", "1", UPSTREAM, str(repo)])
+        if args.repo_dir:
+            repo = Path(args.repo_dir).resolve()
+            if not (repo / "model.py").is_file():
+                raise SystemExit(f"--repo-dir {repo} missing model.py")
+        else:
+            repo = Path(td) / "tracknet"
+            subprocess.check_call(["git", "clone", "--depth", "1", UPSTREAM, str(repo)])
         model_module = _import_model_module(repo)
 
         net = _build_model(model_module, args.variant, args.seq_len)
