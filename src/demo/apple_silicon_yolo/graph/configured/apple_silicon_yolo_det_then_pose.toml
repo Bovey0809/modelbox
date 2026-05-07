@@ -1,0 +1,60 @@
+[driver]
+dir = [
+    "/usr/local/share/modelbox/demo/apple_silicon_yolo/flowunit"
+]
+[flow]
+desc = "Detect persons with YOLOv8n, crop each person, then estimate pose skeleton — Apple Silicon (Core ML)"
+[graph]
+format = "graphviz"
+graphconf = """digraph apple_silicon_yolo_det_then_pose {
+    node [shape=Mrecord]
+
+    video_input[type=flowunit, flowunit=video_input, device=cpu, deviceid=0,
+                source_url="/opt/modelbox/demo/video/yolo26n_test_video.mp4"]
+    videodemuxer[type=flowunit, flowunit=video_demuxer, device=cpu, deviceid=0]
+    videodecoder[type=flowunit, flowunit=video_decoder, device=cpu, deviceid=0, pix_fmt=bgr]
+
+    # Stage 1: person detection (YOLOv8n, post-NMS [1,300,6])
+    resize_det[type=flowunit, flowunit=resize, device=cpu, deviceid=0,
+               image_width=640, image_height=640]
+    person_det[type=flowunit, flowunit=yolo_detect, device=apple_silicon, deviceid=0,
+               batch_size=1]
+
+    # Intermediate: crop the highest-score person from the original frame.
+    # Falls back to the full frame when no person clears the threshold so
+    # downstream nodes (resize_pose → pose_det → pose_post → encoder) stay
+    # in sync without any gap in the output stream.
+    person_crop[type=flowunit, flowunit=person_det_crop, device=cpu, deviceid=0,
+                conf_threshold=0.40, person_class_id=0]
+
+    # Stage 2: pose estimation on the person crop (YOLOv8n-pose [1,56,8400])
+    resize_pose[type=flowunit, flowunit=resize, device=cpu, deviceid=0,
+                image_width=640, image_height=640]
+    pose_det[type=flowunit, flowunit=yolo_pose_detect, device=apple_silicon, deviceid=0,
+             batch_size=1]
+    pose_post[type=flowunit, flowunit=yolo_pose_post, device=cpu, deviceid=0,
+              num_kpts=17, conf_threshold=0.30]
+
+    videoencoder[type=flowunit, flowunit=video_encoder, device=cpu, deviceid=0,
+                 encoder=h264_videotoolbox, format=mp4,
+                 default_dest_url="/tmp/apple_silicon_det_then_pose_result.mp4"]
+
+    video_input:out_video_url    -> videodemuxer:in_video_url
+    videodemuxer:out_video_packet -> videodecoder:in_video_packet
+
+    # Detection branch: resize frame → infer → supply bbox tensor to crop node
+    videodecoder:out_video_frame -> resize_det:in_image
+    resize_det:out_image         -> person_det:input
+    person_det:output            -> person_crop:in_det_feat
+
+    # Crop node also receives the original full-resolution frame to crop from
+    videodecoder:out_video_frame -> person_crop:in_image
+
+    # Pose branch: resize crop → infer → draw skeleton on original-size crop
+    person_crop:out_crop -> resize_pose:in_image
+    resize_pose:out_image -> pose_det:input
+    pose_det:output       -> pose_post:in_feat
+    person_crop:out_crop  -> pose_post:in_image
+
+    pose_post:out_data -> videoencoder:in_video_frame
+}"""
