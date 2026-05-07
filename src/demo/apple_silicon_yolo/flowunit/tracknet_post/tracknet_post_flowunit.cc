@@ -85,9 +85,6 @@ modelbox::Status TrackNetPostFlowUnit::Process(
   auto hm_list = data_ctx->Input("heatmaps");
   auto src_list = data_ctx->Input("source_frame");
   auto out_list = data_ctx->Output("frame_out");
-  if (!hm_list || !src_list || !out_list) {
-    return {modelbox::STATUS_FAULT, "ports missing"};
-  }
   if (hm_list->Size() != src_list->Size()) {
     return {modelbox::STATUS_FAULT, "heatmaps/source_frame size mismatch"};
   }
@@ -128,9 +125,8 @@ modelbox::Status TrackNetPostFlowUnit::Process(
     const int src_w = src_ws[i];
     const int src_h = src_hs[i];
 
-    cv::Mat frame(src_h, src_w, CV_8UC3,
-                  const_cast<void *>(src->ConstData()));
-    cv::Mat draw = frame.clone();
+    std::memcpy(out->MutableData(), src->ConstData(), shapes[i]);
+    cv::Mat draw(src_h, src_w, CV_8UC3, out->MutableData());
 
     const auto *hmap = static_cast<const float *>(hm->ConstData());
     const float *channel =
@@ -159,7 +155,6 @@ modelbox::Status TrackNetPostFlowUnit::Process(
       cv::addWeighted(draw, 0.7, hm_color, 0.3, 0, draw);
     }
 
-    std::memcpy(out->MutableData(), draw.data, shapes[i]);
     out->Set("width", src_w);
     out->Set("height", src_h);
     out->Set("pix_fmt", std::string("bgr"));

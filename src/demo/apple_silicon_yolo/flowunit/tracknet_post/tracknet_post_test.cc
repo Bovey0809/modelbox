@@ -49,6 +49,15 @@ TEST(ExtractCentroid, RecoversGaussianPeakWithinOnePixel) {
   EXPECT_GT(peak, 0.99f);
 }
 
+TEST(ExtractCentroid, RecoversCornerPeak) {
+  const int H = 288, W = 512;
+  auto hm = GaussianHeatmap(H, W, /*cx=*/0.f, /*cy=*/0.f, /*sigma=*/3.f);
+  float cx = 999, cy = 999, peak = 0;
+  ASSERT_TRUE(TrackNetExtractCentroid(hm.data(), H, W, 0.3f, 0.5f, &cx, &cy, &peak));
+  EXPECT_LT(cx, 1.5f);
+  EXPECT_LT(cy, 1.5f);
+}
+
 TEST(ExtractCentroid, FlatBelowThresholdReturnsFalse) {
   const int H = 288;
   const int W = 512;
