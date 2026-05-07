@@ -70,6 +70,11 @@ modelbox::Status TrackNetFrameStackerFlowUnit::DataPre(
   return modelbox::STATUS_OK;
 }
 
+modelbox::Status TrackNetFrameStackerFlowUnit::DataPost(
+    std::shared_ptr<modelbox::DataContext> data_ctx) {
+  return modelbox::STATUS_OK;
+}
+
 modelbox::Status TrackNetFrameStackerFlowUnit::Process(
     std::shared_ptr<modelbox::DataContext> data_ctx) {
   auto state = std::static_pointer_cast<StreamState>(

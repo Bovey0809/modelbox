@@ -45,6 +45,8 @@ class TrackNetFrameStackerFlowUnit : public modelbox::FlowUnit {
       std::shared_ptr<modelbox::DataContext> data_ctx) override;
   modelbox::Status DataPre(
       std::shared_ptr<modelbox::DataContext> data_ctx) override;
+  modelbox::Status DataPost(
+      std::shared_ptr<modelbox::DataContext> data_ctx) override;
 
  private:
   size_t per_frame_floats_{3 * 288 * 512};
