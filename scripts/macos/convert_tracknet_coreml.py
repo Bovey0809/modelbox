@@ -1,17 +1,10 @@
 #!/usr/bin/env python3
-"""Convert TrackNet PyTorch checkpoint to Core ML .mlpackage.
-
-Run on the `pose` GPU server (or any Linux box with torch + coremltools).
-Pulls the upstream model.py via a tempdir git clone — no vendoring.
-
-Default checkpoint: /root/autodl-fs/repos/tracknet/exp_deep/TrackNet_best.pt
-"""
-
-from __future__ import annotations
+"""Convert TrackNet PyTorch checkpoint to Core ML .mlpackage."""
 
 import argparse
 import hashlib
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -25,7 +18,6 @@ UPSTREAM = "https://github.com/bcinno-dev/tracknet"
 
 
 def _unwrap(state) -> dict:
-    """Accept either raw state_dict or training-checkpoint dict."""
     if isinstance(state, dict) and "model" in state and isinstance(state["model"], dict):
         return state["model"]
     return state
@@ -41,9 +33,7 @@ def _import_model_module(repo_dir: Path):
 def _build_model(model_module, variant: str, seq_len: int):
     if variant == "deep":
         return model_module.TrackNetDeep(seq_len=seq_len)
-    if variant == "small":
-        return model_module.TrackNet(seq_len=seq_len)
-    raise SystemExit(f"unknown variant: {variant!r}")
+    return model_module.TrackNet(seq_len=seq_len)
 
 
 def main() -> int:
@@ -106,11 +96,9 @@ def main() -> int:
 
         out = Path(args.out).resolve()
         if out.exists():
-            subprocess.check_call(["rm", "-rf", str(out)])
+            shutil.rmtree(out)
         mlmodel.save(str(out))
 
-        # Sanity check: PyTorch vs Core ML on 5 random tensors.
-        # `predict` only works on macOS; on other platforms, skip gracefully.
         try:
             max_err = 0.0
             for _ in range(5):
@@ -127,7 +115,6 @@ def main() -> int:
         except Exception as exc:  # noqa: BLE001
             print(f"sanity check skipped: {exc} (run on macOS to verify)")
 
-        # Report size + content hash.
         total = 0
         h = hashlib.sha256()
         for p in sorted(out.rglob("*")):
