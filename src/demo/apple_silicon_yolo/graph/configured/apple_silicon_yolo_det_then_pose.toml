@@ -50,11 +50,14 @@ graphconf = """digraph apple_silicon_yolo_det_then_pose {
     # Crop node also receives the original full-resolution frame to crop from
     videodecoder:out_video_frame -> person_crop:in_image
 
-    # Pose branch: resize crop → infer → draw skeleton on original-size crop
-    person_crop:out_crop -> resize_pose:in_image
+    # Pose branch: resize crop to 640×640 → infer → draw skeleton on the
+    # resized crop.  Using resize_pose:out_image (always 640×640) as the
+    # background for yolo_pose_post avoids variable-size crops reaching the
+    # video encoder (VideoToolbox requires width/height divisible by 16).
+    person_crop:out_crop  -> resize_pose:in_image
     resize_pose:out_image -> pose_det:input
     pose_det:output       -> pose_post:in_feat
-    person_crop:out_crop  -> pose_post:in_image
+    resize_pose:out_image -> pose_post:in_image
 
     pose_post:out_data -> videoencoder:in_video_frame
 }"""

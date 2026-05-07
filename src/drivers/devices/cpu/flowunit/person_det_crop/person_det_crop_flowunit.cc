@@ -107,8 +107,14 @@ modelbox::Status PersonDetCropFlowUnit::Process(
                                     static_cast<int>(best.x2 * scale_x)));
       int y2 = std::max(0, std::min(height - 1,
                                     static_cast<int>(best.y2 * scale_y)));
-      int rw = std::max(1, x2 - x1);
-      int rh = std::max(1, y2 - y1);
+      // H.264 (and YUV420p chroma) require even width and height.
+      int rw = std::max(2, (x2 - x1) & ~1);
+      int rh = std::max(2, (y2 - y1) & ~1);
+      // Clamp so the rect stays within the image.
+      rw = std::min(rw, (width - x1) & ~1);
+      rh = std::min(rh, (height - y1) & ~1);
+      rw = std::max(2, rw);
+      rh = std::max(2, rh);
       frame(cv::Rect(x1, y1, rw, rh)).copyTo(region);
       MBLOG_DEBUG << "person_det_crop: person score=" << best.score
                   << " crop=[" << x1 << "," << y1 << "," << rw << "x" << rh << "]";
