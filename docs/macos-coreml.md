@@ -200,6 +200,23 @@ within-call batch).
   getifaddrs+AF_LINK) and the small set of `#ifdef __APPLE__` blocks
   in `src/modelbox/common/utils.cc`.
 
+### TrackNet (tennis ball heatmap tracker)
+
+A standalone graph alongside the YOLO demos. Run with:
+
+```bash
+scripts/macos/run-apple-silicon-tracknet.sh <input.mp4> <output.mp4>
+```
+
+Conversion script `scripts/macos/convert_tracknet_coreml.py` takes a TrackNetDeep
+`.pt` (https://github.com/bcinno-dev/tracknet) and emits a Core ML `.mlpackage`.
+Graph: `src/demo/apple_silicon_yolo/graph/apple_silicon_tracknet.toml.in`.
+Pipeline: `decoder → resize(512×288) → normalize(/255) → tracknet_frame_stacker
+(sliding 3-frame window) → tracknet_deep (Core ML) → tracknet_post (heatmap →
+weighted centroid → red circle on source-resolution frame) → encoder`. See
+`docs/superpowers/specs/2026-05-07-tracknet-apple-silicon-design.md` for the full
+design and known EOF-deadlock issue.
+
 ## Known caveats
 
 * **brew opencv install\_names on macOS 26 (Tahoe)**: brew's opencv

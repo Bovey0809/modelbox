@@ -1,0 +1,109 @@
+# PaddleOCR end-to-end demo graph (PP-OCRv4 detection + classification + recognition).
+#
+# Pipeline:
+#   video_input -> video_demuxer -> video_decoder ->
+#     paddle_ocr_det_pre -> det_infer (paddle_inference) -> paddle_ocr_det_post ->
+#     paddle_ocr_crop_rotate -> cls_infer (paddle_inference) -> paddle_ocr_cls_post ->
+#     paddle_ocr_rec_pre  -> rec_infer (paddle_inference) -> paddle_ocr_rec_post ->
+#     paddle_ocr_draw -> video_encoder
+#
+# Tensor names per model — discover with:
+#   python -c "import paddle.inference as pi; \
+#              cfg = pi.Config('inference.pdmodel','inference.pdiparams'); \
+#              p = pi.create_predictor(cfg); \
+#              print(p.get_input_names(), p.get_output_names())"
+# PP-OCRv4 commonly reports input 'x' for all three models; det output is
+# 'sigmoid_0.tmp_0', cls output 'softmax_0.tmp_0', rec output 'softmax_5.tmp_0'
+# (names vary by export — verify). When config.input_name / config.output_name
+# are left empty the paddle_inference flowunit falls back to whatever the
+# model itself declares, which is what we do below.
+#
+# Edit the variables in [args] / the graphconf header to point at your inputs.
+
+[driver]
+# Adjust these to your build/install layout. The dev workflow points them at the build tree.
+[[driver.dir]]
+dir = "/root/modelbox/build/src/drivers/devices/cpu/flowunit"
+[[driver.dir]]
+dir = "/root/modelbox/build/src/drivers/devices/cuda/flowunit"
+[[driver.dir]]
+dir = "/root/modelbox/build/src/drivers"
+# Per-model directories holding each paddle_inference virtual-flowunit TOML.
+# The download_models.sh script lays the models out under <repo>/models/paddle_ocr/.
+# Edit these three lines if you placed them elsewhere.
+[[driver.dir]]
+dir = "/root/modelbox/models/paddle_ocr/ch_PP-OCRv4_det_infer"
+[[driver.dir]]
+dir = "/root/modelbox/models/paddle_ocr/ch_ppocr_mobile_v2.0_cls_infer"
+[[driver.dir]]
+dir = "/root/modelbox/models/paddle_ocr/ch_PP-OCRv4_rec_infer"
+
+[flow]
+desc = "PaddleOCR PP-OCRv4 detection + classification + recognition over a video stream"
+
+[profile]
+profile = false
+trace = false
+dir = ""
+
+[graph]
+format = "graphviz"
+graphconf = '''digraph paddle_ocr_video {
+    node [shape=Mrecord]
+
+    # ---- I/O -----------------------------------------------------------------
+    video_input    [type=flowunit, flowunit=video_input,    device=cpu,  deviceid=0,
+                    source_url="/root/modelbox/data/ocr_test.mp4"]
+    video_demuxer  [type=flowunit, flowunit=video_demuxer,  device=cpu,  deviceid=0]
+    video_decoder  [type=flowunit, flowunit=video_decoder,  device=cuda, deviceid=0, pix_fmt=bgr]
+    video_encoder  [type=flowunit, flowunit=video_encoder,  device=cpu,  deviceid=0,
+                    encoder=mpeg4, format=mp4,
+                    default_dest_url="/tmp/paddle_ocr_result.mp4"]
+
+    # ---- Detection branch ----------------------------------------------------
+    det_pre   [type=flowunit, flowunit=paddle_ocr_det_pre,  device=cpu,  deviceid=0]
+    det_infer [type=flowunit, flowunit=ch_PP-OCRv4_det_infer, device=cuda, deviceid=0,
+               config.gpu_id=0, config.enable_trt=false, config.trt_precision="fp32"]
+    det_post  [type=flowunit, flowunit=paddle_ocr_det_post, device=cpu,  deviceid=0]
+
+    # ---- Per-line crop + classify + recognise --------------------------------
+    crop_rotate [type=flowunit, flowunit=paddle_ocr_crop_rotate, device=cpu, deviceid=0]
+    cls_infer   [type=flowunit, flowunit=ch_ppocr_mobile_v2_0_cls_infer, device=cuda, deviceid=0,
+                 config.gpu_id=0, config.enable_trt=false, config.trt_precision="fp32"]
+    cls_pre     [type=flowunit, flowunit=paddle_ocr_cls_pre,  device=cpu, deviceid=0]
+    cls_post    [type=flowunit, flowunit=paddle_ocr_cls_post, device=cpu, deviceid=0]
+    rec_pre     [type=flowunit, flowunit=paddle_ocr_rec_pre,  device=cpu, deviceid=0]
+    rec_infer   [type=flowunit, flowunit=ch_PP-OCRv4_rec_infer, device=cuda, deviceid=0,
+                 config.gpu_id=0, config.enable_trt=false, config.trt_precision="fp32"]
+    rec_post    [type=flowunit, flowunit=paddle_ocr_rec_post, device=cpu, deviceid=0,
+                 char_dict_file="/root/modelbox/models/paddle_ocr/ppocr_keys_v1.txt"]
+
+    # ---- Visualise -----------------------------------------------------------
+    draw [type=flowunit, flowunit=paddle_ocr_draw, device=cpu, deviceid=0]
+
+    # ---- Wiring --------------------------------------------------------------
+    video_input:out_video_url       -> video_demuxer:in_video_url
+    video_demuxer:out_video_packet  -> video_decoder:in_video_packet
+    video_decoder:out_video_frame   -> det_pre:in_image
+
+    det_pre:out_tensor              -> det_infer:x
+    det_pre:out_image               -> det_post:in_image
+    det_infer:"sigmoid_0.tmp_0"     -> det_post:in_prob
+
+    det_post:out_image              -> crop_rotate:in_image
+
+    crop_rotate:out_crop            -> cls_pre:in_crop
+    cls_pre:out_tensor              -> cls_infer:x
+    cls_pre:out_crop                -> cls_post:in_crop
+    cls_infer:"softmax_0.tmp_0"     -> cls_post:in_logits
+
+    cls_post:out_crop               -> rec_pre:in_crop
+    rec_pre:out_tensor              -> rec_infer:x
+    rec_infer:"softmax_5.tmp_0"     -> rec_post:in_logits
+    rec_pre:out_crop                -> rec_post:in_crop
+
+    crop_rotate:out_image           -> draw:in_image
+    rec_post:out_result             -> draw:in_result
+
+    draw:out_image                  -> video_encoder:in_video_frame
+}'''

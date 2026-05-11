@@ -26,7 +26,9 @@ foreach(GRAPH_BASE
         apple_silicon_yolo_pose
         apple_silicon_yolo_seg
         apple_silicon_yolo_cls
-        apple_silicon_yolo_track)
+        apple_silicon_yolo_track
+        apple_silicon_yolo_det_then_pose
+        apple_silicon_tracknet)
     set(GRAPH_NAME "${GRAPH_BASE}.toml")
     set(DEMO_GRAPH ${CMAKE_CURRENT_BINARY_DIR}/${GRAPH_NAME})
     configure_file(${CMAKE_CURRENT_SOURCE_DIR}/${GRAPH_NAME}.in ${DEMO_GRAPH})
