@@ -31,7 +31,8 @@ Status PaddleInference::Init(const PaddleInferenceParams& p) {
 
   paddle_infer::Config cfg;
   cfg.SetModel(p.model_file, p.params_file);
-  cfg.DisableGlogInfo();
+  // Keep paddle's glog enabled while we're stabilising — surfaces CUDA/SDK
+  // mismatch errors that would otherwise be lost to a bare segfault.
   cfg.SwitchUseFeedFetchOps(false);
   cfg.SwitchSpecifyInputNames(true);
   cfg.EnableMemoryOptim();
@@ -75,7 +76,8 @@ Status PaddleInference::Init(const PaddleInferenceParams& p) {
 
 Status PaddleInference::Infer(
     const std::vector<std::shared_ptr<Buffer>>& inputs,
-    std::vector<std::shared_ptr<Buffer>>& outputs) {
+    std::vector<std::shared_ptr<Buffer>>& outputs,
+    const std::shared_ptr<Device>& output_device) {
   if (!predictor_) {
     return {STATUS_FAULT, "paddle: predictor not initialized"};
   }
@@ -89,6 +91,15 @@ Status PaddleInference::Infer(
     if (shape_sz.empty()) {
       return {STATUS_FAULT,
               "paddle: input " + input_names_[i] + " missing shape meta"};
+    }
+    size_t numel = 1;
+    for (auto d : shape_sz) numel *= d;
+    size_t bytes = numel * sizeof(float);
+    if (bytes != inputs[i]->GetBytes()) {
+      return {STATUS_FAULT,
+              "paddle: input " + input_names_[i] +
+                  " shape/bytes mismatch shape_numel*4=" + std::to_string(bytes) +
+                  " buffer_bytes=" + std::to_string(inputs[i]->GetBytes())};
     }
     std::vector<int> shape(shape_sz.begin(), shape_sz.end());
     handle->Reshape(shape);
@@ -104,12 +115,18 @@ Status PaddleInference::Infer(
     auto shape = handle->shape();
     size_t numel = 1;
     for (auto d : shape) {
+      if (d <= 0) {
+        return {STATUS_FAULT, "paddle: output '" + output_names_[i] +
+                                  "' has non-positive dim after Run"};
+      }
       numel *= static_cast<size_t>(d);
     }
-    auto buf = std::make_shared<Buffer>();
+    auto buf = std::make_shared<Buffer>(output_device);
     auto status = buf->Build(numel * sizeof(float));
     if (!status) {
-      return {STATUS_FAULT, "paddle: Buffer::Build failed"};
+      return {STATUS_FAULT,
+              "paddle: Buffer::Build failed for output '" + output_names_[i] +
+                  "' (" + std::to_string(numel * sizeof(float)) + " bytes)"};
     }
     handle->CopyToCpu(static_cast<float*>(buf->MutableData()));
     std::vector<size_t> shape_sz(shape.begin(), shape.end());

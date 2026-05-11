@@ -44,15 +44,21 @@ modelbox::Status PaddleInferenceFlowUnit::Open(
   }
 
   modelbox::PaddleInferenceParams p;
-  p.model_file = opts->GetString("model_file", unit_desc->GetModelEntry());
-  p.params_file = opts->GetString("params_file");
-  p.device = "gpu";
-  p.gpu_id = opts->GetInt32("gpu_id", 0);
-  p.enable_trt = opts->GetBool("enable_trt", false);
-  p.trt_workspace_mb = opts->GetInt32("trt_workspace_mb", 256);
-  p.trt_precision = opts->GetString("trt_precision", "fp32");
-  p.input_names = opts->GetStrings("input_name");
-  p.output_names = opts->GetStrings("output_name");
+  // Merge model TOML's [config] (carried via unit_desc) with the per-instance
+  // graph node attributes from opts. Pattern from mindspore_inference.cc.
+  auto merged = std::make_shared<modelbox::Configuration>();
+  merged->Add(*unit_desc->GetConfiguration());
+  merged->Add(*opts);
+
+  p.model_file = merged->GetString("config.model_file", unit_desc->GetModelEntry());
+  p.params_file = merged->GetString("config.params_file");
+  p.device = merged->GetString("config.runtime", "gpu");  // "gpu" | "cpu"
+  p.gpu_id = merged->GetInt32("config.gpu_id", 0);
+  p.enable_trt = merged->GetBool("config.enable_trt", false);
+  p.trt_workspace_mb = merged->GetInt32("config.trt_workspace_mb", 256);
+  p.trt_precision = merged->GetString("config.trt_precision", "fp32");
+  p.input_names = merged->GetStrings("config.input_name");
+  p.output_names = merged->GetStrings("config.output_name");
 
   if (p.input_names.empty()) {
     p.input_names = in_ports_;
@@ -78,38 +84,94 @@ modelbox::Status PaddleInferenceFlowUnit::Close() {
 
 modelbox::Status PaddleInferenceFlowUnit::Process(
     std::shared_ptr<modelbox::DataContext> ctx) {
-  std::vector<std::shared_ptr<modelbox::Buffer>> ins;
-  std::vector<std::shared_ptr<modelbox::Buffer>> outs;
-  for (const auto &name : in_ports_) {
-    auto port = ctx->Input(name);
-    if (!port || port->Size() == 0) {
-      return {modelbox::STATUS_FAULT,
-              "paddle_inference: empty input port " + name};
-    }
-    ins.push_back(port->At(0));
+  // Paddle's CopyFromCpu/CopyToCpu expects host memory. Migrate every input
+  // buffer to the host CPU device before handing it to Paddle.
+  auto host_device =
+      this->GetBindDevice()->GetDeviceManager()->GetDevice("cpu", "0");
+  if (!host_device) {
+    return {modelbox::STATUS_FAULT,
+            "paddle_inference: cannot acquire cpu device"};
   }
 
-  auto st = engine_->Infer(ins, outs);
-  if (!st) {
-    return st;
+  // All input ports must carry the same batch size (one buffer per frame).
+  size_t batch = 0;
+  for (const auto &name : in_ports_) {
+    auto port = ctx->Input(name);
+    if (!port) {
+      return {modelbox::STATUS_FAULT,
+              "paddle_inference: missing input port " + name};
+    }
+    if (batch == 0) {
+      batch = port->Size();
+    } else if (port->Size() != batch) {
+      return {modelbox::STATUS_FAULT,
+              "paddle_inference: input ports have mismatched batch sizes"};
+    }
   }
-  if (outs.size() != out_ports_.size()) {
-    return {modelbox::STATUS_FAULT,
-            "paddle_inference: output count mismatch (got " +
-                std::to_string(outs.size()) + ", expected " +
-                std::to_string(out_ports_.size()) + ")"};
+  if (batch == 0) {
+    return modelbox::STATUS_OK;
   }
+
+  // Pre-size output ports to match batch.
+  std::vector<std::shared_ptr<modelbox::BufferList>> out_ports(out_ports_.size());
+  std::vector<std::vector<std::vector<uint8_t>>> out_blobs(out_ports_.size());
+  std::vector<std::vector<std::vector<size_t>>> out_shapes(out_ports_.size());
   for (size_t i = 0; i < out_ports_.size(); ++i) {
-    auto port = ctx->Output(out_ports_[i]);
-    auto build = port->Build({outs[i]->GetBytes()});
+    out_ports[i] = ctx->Output(out_ports_[i]);
+    out_blobs[i].resize(batch);
+    out_shapes[i].resize(batch);
+  }
+
+  for (size_t b = 0; b < batch; ++b) {
+    std::vector<std::shared_ptr<modelbox::Buffer>> ins;
+    std::vector<std::shared_ptr<modelbox::Buffer>> outs;
+    for (const auto &name : in_ports_) {
+      auto port = ctx->Input(name);
+      auto buf = port->At(b);
+      if (!buf->GetDevice() || buf->GetDevice()->GetType() != "cpu") {
+        buf = buf->CopyTo(host_device);
+      }
+      ins.push_back(buf);
+    }
+    auto st = engine_->Infer(ins, outs, host_device);
+    if (!st) {
+      return st;
+    }
+    if (outs.size() != out_ports_.size()) {
+      return {modelbox::STATUS_FAULT,
+              "paddle_inference: output count mismatch (got " +
+                  std::to_string(outs.size()) + ", expected " +
+                  std::to_string(out_ports_.size()) + ")"};
+    }
+    for (size_t i = 0; i < out_ports_.size(); ++i) {
+      const auto bytes = outs[i]->GetBytes();
+      out_blobs[i][b].resize(bytes);
+      std::memcpy(out_blobs[i][b].data(), outs[i]->ConstData(), bytes);
+      outs[i]->Get("shape", out_shapes[i][b]);
+    }
+  }
+
+  for (size_t i = 0; i < out_ports_.size(); ++i) {
+    std::vector<size_t> sizes(batch);
+    size_t total = 0;
+    for (size_t b = 0; b < batch; ++b) {
+      sizes[b] = out_blobs[i][b].size();
+      total += sizes[b];
+    }
+    std::vector<uint8_t> contig(total);
+    size_t off = 0;
+    for (size_t b = 0; b < batch; ++b) {
+      std::memcpy(contig.data() + off, out_blobs[i][b].data(), sizes[b]);
+      off += sizes[b];
+    }
+    auto build = out_ports[i]->BuildFromHost(sizes, contig.data(), total);
     if (!build) {
       return build;
     }
-    std::memcpy(port->At(0)->MutableData(), outs[i]->ConstData(),
-                outs[i]->GetBytes());
-    std::vector<size_t> shape;
-    if (outs[i]->Get("shape", shape)) {
-      port->At(0)->Set("shape", shape);
+    for (size_t b = 0; b < batch; ++b) {
+      if (!out_shapes[i][b].empty()) {
+        out_ports[i]->At(b)->Set("shape", out_shapes[i][b]);
+      }
     }
   }
   return modelbox::STATUS_OK;

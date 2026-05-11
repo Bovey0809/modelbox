@@ -17,6 +17,7 @@
 #ifndef MODELBOX_ENGINE_PADDLE_INFERENCE_H_
 #define MODELBOX_ENGINE_PADDLE_INFERENCE_H_
 
+#include <modelbox/base/device.h>
 #include <modelbox/base/status.h>
 #include <modelbox/buffer.h>
 
@@ -48,7 +49,8 @@ class PaddleInference {
  public:
   Status Init(const PaddleInferenceParams& p);
   Status Infer(const std::vector<std::shared_ptr<Buffer>>& inputs,
-               std::vector<std::shared_ptr<Buffer>>& outputs);
+               std::vector<std::shared_ptr<Buffer>>& outputs,
+               const std::shared_ptr<Device>& output_device);
   const std::vector<std::string>& InputNames() const { return input_names_; }
   const std::vector<std::string>& OutputNames() const { return output_names_; }
 

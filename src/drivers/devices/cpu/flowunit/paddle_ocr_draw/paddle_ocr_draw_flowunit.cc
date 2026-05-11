@@ -254,7 +254,9 @@ MODELBOX_FLOWUNIT(PaddleOcrDrawFlowUnit, desc) {
   desc.AddFlowUnitInput({"in_image"});
   desc.AddFlowUnitInput({"in_result"});
   desc.AddFlowUnitOutput({"out_image"});
-  desc.SetFlowType(modelbox::NORMAL);
+  desc.SetFlowType(modelbox::STREAM);
+  desc.SetOutputType(modelbox::COLLAPSE);
+  desc.SetCollapseAll(true);
   desc.SetInputContiguous(false);
   desc.SetDescription(FLOWUNIT_DESC);
   desc.AddFlowUnitOption(modelbox::FlowUnitOption(

@@ -241,7 +241,8 @@ MODELBOX_FLOWUNIT(PaddleOcrCropRotateFlowUnit, desc) {
   desc.AddFlowUnitInput({"in_image"});
   desc.AddFlowUnitOutput({"out_crop"});
   desc.AddFlowUnitOutput({"out_image"});
-  desc.SetFlowType(modelbox::NORMAL);
+  desc.SetFlowType(modelbox::STREAM);
+  desc.SetOutputType(modelbox::EXPAND);
   desc.SetInputContiguous(false);
   desc.SetDescription(FLOWUNIT_DESC);
 }
