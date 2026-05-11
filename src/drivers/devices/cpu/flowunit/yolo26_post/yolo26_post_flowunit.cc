@@ -20,6 +20,9 @@
 
 #include <algorithm>
 #include <cstring>
+#include <sstream>
+#include <stdexcept>
+#include <string>
 
 #include "modelbox/flowunit.h"
 #include "modelbox/flowunit_api_helper.h"
@@ -31,9 +34,38 @@ modelbox::Status Yolo26PostFlowUnit::Open(
   num_classes_ = opts->GetInt32("num_classes", 80);
   conf_threshold_ = opts->GetFloat("conf_threshold", 0.25F);
   iou_threshold_ = opts->GetFloat("iou_threshold", 0.45F);
+
+  std::string allow = opts->GetString("class_allowlist", "");
+  if (!allow.empty()) {
+    std::stringstream ss(allow);
+    std::string tok;
+    while (std::getline(ss, tok, ',')) {
+      // trim
+      size_t a = tok.find_first_not_of(" \t");
+      size_t b = tok.find_last_not_of(" \t");
+      if (a == std::string::npos) continue;
+      tok = tok.substr(a, b - a + 1);
+      if (tok.empty()) continue;
+      int v = 0;
+      try {
+        v = std::stoi(tok);
+      } catch (const std::exception &) {
+        return {modelbox::STATUS_BADCONF,
+                "yolo26_post: class_allowlist token is not an int: " + tok};
+      }
+      if (v < 0 || v >= num_classes_) {
+        return {modelbox::STATUS_BADCONF,
+                "yolo26_post: class_allowlist value out of range [0, " +
+                    std::to_string(num_classes_ - 1) + "]: " + tok};
+      }
+      class_allowlist_.insert(v);
+    }
+  }
+
   MBLOG_INFO << "yolo26_post (cpp): net=" << net_w_ << "x" << net_h_
              << " num_classes=" << num_classes_
-             << " conf=" << conf_threshold_ << " iou=" << iou_threshold_;
+             << " conf=" << conf_threshold_ << " iou=" << iou_threshold_
+             << " class_allowlist=[" << allow << "]";
   return modelbox::STATUS_OK;
 }
 
@@ -59,6 +91,9 @@ std::vector<Yolo26PostFlowUnit::Detection> Yolo26PostFlowUnit::Decode(
       }
     }
     if (best_score < conf_threshold_) {
+      continue;
+    }
+    if (!class_allowlist_.empty() && class_allowlist_.count(best_label) == 0) {
       continue;
     }
     float cx = feat[0 * num_anchors + n];
@@ -202,6 +237,10 @@ modelbox::Status Yolo26PostFlowUnit::Process(
         if (score < conf_threshold_) {
           continue;
         }
+        if (!class_allowlist_.empty() &&
+            class_allowlist_.count(class_id) == 0) {
+          continue;
+        }
         Detection det;
         det.x1 = x1 * scale_x;
         det.y1 = y1 * scale_y;
@@ -252,6 +291,9 @@ MODELBOX_FLOWUNIT(Yolo26PostFlowUnit, desc) {
       "conf_threshold", "float", true, "0.25", "minimum class score"));
   desc.AddFlowUnitOption(modelbox::FlowUnitOption(
       "iou_threshold", "float", true, "0.45", "NMS IoU threshold"));
+  desc.AddFlowUnitOption(modelbox::FlowUnitOption(
+      "class_allowlist", "string", false, "",
+      "comma-separated class IDs to keep (empty = all classes)"));
 }
 
 MODELBOX_DRIVER_FLOWUNIT(desc) {

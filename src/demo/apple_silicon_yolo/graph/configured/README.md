@@ -28,6 +28,7 @@ matching `.toml.in` template and rebuild.
 | `apple_silicon_yolo_cls.toml`          | classification      | `yolov8n-cls.mlpackage` ([1, 1000])                  | `yolo_cls_post`   |
 | `apple_silicon_yolo_track.toml`        | det + tracking      | `yolov8n.mlpackage` (reused, post-NMS)               | `yolo_track_post` |
 | `apple_silicon_yolo_det_then_pose.toml`| cascade: det → pose | `yolov8n.mlpackage` + `yolov8n-pose.mlpackage`       | `person_det_crop` + `yolo_pose_post` |
+| `apple_silicon_car_detection.toml`     | detection (vehicles)| `yolov8n.mlpackage` (post-NMS [1, 300, 6])           | `yolo26_post` + class_allowlist |
 
 The first six graphs share the same upstream pipeline:
 

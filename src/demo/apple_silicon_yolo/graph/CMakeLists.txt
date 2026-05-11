@@ -28,7 +28,8 @@ foreach(GRAPH_BASE
         apple_silicon_yolo_cls
         apple_silicon_yolo_track
         apple_silicon_yolo_det_then_pose
-        apple_silicon_tracknet)
+        apple_silicon_tracknet
+        apple_silicon_car_detection)
     set(GRAPH_NAME "${GRAPH_BASE}.toml")
     set(DEMO_GRAPH ${CMAKE_CURRENT_BINARY_DIR}/${GRAPH_NAME})
     configure_file(${CMAKE_CURRENT_SOURCE_DIR}/${GRAPH_NAME}.in ${DEMO_GRAPH})
@@ -38,3 +39,9 @@ foreach(GRAPH_BASE
         COMPONENT demo
     )
 endforeach()
+
+install(FILES
+    ${CMAKE_CURRENT_SOURCE_DIR}/car-detection.mp4
+    DESTINATION ${DEMO_APPLE_SILICON_YOLO_GRAPH_DIR}
+    COMPONENT demo
+)
