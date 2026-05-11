@@ -7,6 +7,11 @@
 # You may obtain a copy of the License at
 #
 # http://www.apache.org/licenses/LICENSE-2.0
+#
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 """End-to-end smoke test for the apple_silicon_car_detection demo.
 
@@ -50,8 +55,12 @@ class AppleSiliconCarDetectionSmoke(unittest.TestCase):
     def test_runs_and_produces_mp4(self):
         if os.path.exists(self.OUTPUT_MP4):
             os.remove(self.OUTPUT_MP4)
-        rc = subprocess.call(["modelbox-tool", "flow", "-run", self.GRAPH])
-        self.assertEqual(rc, 0, "modelbox-tool flow -run exited non-zero")
+        rc = subprocess.call([
+            "modelbox-tool", "flow", "run",
+            "-name", "apple_silicon_car_detection",
+            "-graph", self.GRAPH,
+        ])
+        self.assertEqual(rc, 0, "modelbox-tool flow run exited non-zero")
         self.assertTrue(os.path.isfile(self.OUTPUT_MP4),
                         f"missing output mp4 at {self.OUTPUT_MP4}")
         self.assertGreater(os.path.getsize(self.OUTPUT_MP4), 10_000,
@@ -75,6 +84,8 @@ if __name__ == "__main__":
     parser.add_argument("demo_dir", nargs="?", default=None)
     args, rest = parser.parse_known_args()
     if args.demo_dir:
-        os.environ["APPLE_SILICON_YOLO_DEMO_DIR"] = args.demo_dir
-    sys.argv = [sys.argv[0]] + rest
-    unittest.main()
+        AppleSiliconCarDetectionSmoke.DEMO_DIR = args.demo_dir
+        AppleSiliconCarDetectionSmoke.GRAPH = os.path.join(
+            args.demo_dir, "graph", "apple_silicon_car_detection.toml"
+        )
+    unittest.main(argv=[sys.argv[0]] + rest, verbosity=2)
