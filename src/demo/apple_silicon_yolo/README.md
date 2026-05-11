@@ -64,3 +64,22 @@ Smoke test:
 python test/function/apple_silicon_yolo/test_apple_silicon_yolo.py \
   /usr/local/share/modelbox/demo/apple_silicon_yolo
 ```
+
+## Car detection variant
+
+`apple_silicon_car_detection.toml` runs the same DAG but filters
+detections to COCO vehicle classes only (`car=2`, `motorcycle=3`,
+`bus=5`, `truck=7`) via the `yolo26_post` flowunit's `class_allowlist`
+config. A 30-second 768×432 highway clip from
+[`intel-iot-devkit/sample-videos`](https://github.com/intel-iot-devkit/sample-videos)
+(Apache-2.0) is bundled and installed alongside the graph.
+
+```bash
+modelbox-tool flow -run \
+  /usr/local/share/modelbox/demo/apple_silicon_yolo/graph/apple_silicon_car_detection.toml
+open /tmp/apple_silicon_car_detection_result.mp4
+```
+
+To filter different classes in your own graph, set
+`class_allowlist="<csv>"` on `yolo26_post`. Empty/missing = keep all
+classes (default).

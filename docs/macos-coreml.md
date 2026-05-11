@@ -16,6 +16,7 @@ port over without code changes.
 | `inference_engine/coreml/`               | new        | `.mlpackage` / `.mlmodel` loader            |
 | `coreml_inference` flowunit              | new        | `device=apple_silicon`, `virtual_type=coreml` |
 | `apple_silicon_yolo` demo + smoke test   | new        | six DAGs: det / obb / pose / seg / cls / track |
+| `apple_silicon_car_detection` graph + test | new        | vehicles-only filter via `yolo26_post`      |
 | Linux/aarch64 + Linux/x86_64 builds      | unaffected | every change gated by `__APPLE__` / `APPLE` |
 
 Skipped on macOS: `manager` daemon (signalfd / capabilities), `server`
