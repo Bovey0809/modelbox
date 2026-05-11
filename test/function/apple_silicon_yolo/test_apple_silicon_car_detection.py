@@ -55,12 +55,20 @@ class AppleSiliconCarDetectionSmoke(unittest.TestCase):
     def test_runs_and_produces_mp4(self):
         if os.path.exists(self.OUTPUT_MP4):
             os.remove(self.OUTPUT_MP4)
-        rc = subprocess.call([
-            "modelbox-tool", "flow", "run",
-            "-name", "apple_silicon_car_detection",
-            "-graph", self.GRAPH,
-        ])
-        self.assertEqual(rc, 0, "modelbox-tool flow run exited non-zero")
+        result = subprocess.run(
+            [
+                "modelbox-tool", "flow", "run",
+                "-name", "apple_silicon_car_detection",
+                "-graph", self.GRAPH,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        self.assertEqual(
+            result.returncode, 0,
+            f"modelbox-tool flow run exited non-zero: stderr={result.stderr}",
+        )
         self.assertTrue(os.path.isfile(self.OUTPUT_MP4),
                         f"missing output mp4 at {self.OUTPUT_MP4}")
         self.assertGreater(os.path.getsize(self.OUTPUT_MP4), 10_000,

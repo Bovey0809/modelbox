@@ -75,8 +75,8 @@ config. A 30-second 768×432 highway clip from
 (Apache-2.0) is bundled and installed alongside the graph.
 
 ```bash
-modelbox-tool flow -run \
-  /usr/local/share/modelbox/demo/apple_silicon_yolo/graph/apple_silicon_car_detection.toml
+modelbox-tool flow run -name apple_silicon_car_detection \
+  -graph /usr/local/share/modelbox/demo/apple_silicon_yolo/graph/apple_silicon_car_detection.toml
 open /tmp/apple_silicon_car_detection_result.mp4
 ```
 
