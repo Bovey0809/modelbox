@@ -187,11 +187,14 @@ The existing CI runs Linux-only; on-Mac validation is manual per
 2. **`yolo26n.mlpackage` already has all 80 COCO classes.** No
    retraining or model swap needed. The allowlist is purely a runtime
    filter on inference output.
-3. **Bus class on `car-detection.mp4`.** This clip is a US highway
-   shot with only cars/trucks — no buses or motorcycles. The second
-   clip (`person-bicycle-car-detection.mp4`) is urban and may include
-   bicycles (not in the allowlist, class 1) and persons (also not in
-   the allowlist), giving a clean negative-control for the filter.
+3. **Bundled video is side-view, not aerial.** The original spec
+   draft pointed at Intel's `car-detection.mp4` (top-down aerial
+   parking-lot footage), but YOLOv8n COCO is trained on street-level
+   side-view imagery and emits near-zero confidence on aerial vehicle
+   shots (verified empirically: best top-down car detection score was
+   0.016). The committed bundle is the side-view `highway.mp4` clip
+   from `MikhailTodes/traffic_counter`, which yields 0.85–0.92
+   confidence scores on visible cars and trucks.
 
 ## Out of scope (explicit non-deliverables)
 

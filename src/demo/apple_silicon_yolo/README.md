@@ -70,9 +70,14 @@ python test/function/apple_silicon_yolo/test_apple_silicon_yolo.py \
 `apple_silicon_car_detection.toml` runs the same DAG but filters
 detections to COCO vehicle classes only (`car=2`, `motorcycle=3`,
 `bus=5`, `truck=7`) via the `yolo26_post` flowunit's `class_allowlist`
-config. A 30-second 768×432 highway clip from
-[`intel-iot-devkit/sample-videos`](https://github.com/intel-iot-devkit/sample-videos)
-(Apache-2.0) is bundled and installed alongside the graph.
+config. A ~48-second 856×474 @ 30 fps side-view highway clip
+(from
+[`MikhailTodes/traffic_counter`](https://github.com/MikhailTodes/traffic_counter)'s
+`highway.mp4`, used here as a stable test fixture) is bundled and
+installed alongside the graph. The clip was chosen because COCO-trained
+YOLO detects vehicles best from a street-level side perspective; a
+top-down aerial parking-lot shot will return near-zero confidence even
+when cars are clearly visible.
 
 ```bash
 modelbox-tool flow run -name apple_silicon_car_detection \

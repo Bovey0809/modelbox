@@ -77,14 +77,15 @@ class AppleSiliconCarDetectionSmoke(unittest.TestCase):
     def test_ffprobe_frame_count(self):
         if not _have("ffprobe"):
             self.skipTest("ffprobe not on PATH")
-        # The bundled clip is 768x432 @ 12.5 fps for 30 s ≈ 377 frames.
+        # The bundled clip is 856x474 @ 30 fps for ~47.7 s ≈ 1431 frames;
+        # the encoder may drop a small tail.
         out = subprocess.check_output([
             "ffprobe", "-v", "error", "-select_streams", "v:0",
             "-count_frames", "-show_entries", "stream=nb_read_frames",
             "-of", "default=nokey=1:noprint_wrappers=1", self.OUTPUT_MP4
         ]).decode().strip()
         n = int(out)
-        self.assertGreaterEqual(n, 350, f"output mp4 has only {n} frames")
+        self.assertGreaterEqual(n, 1350, f"output mp4 has only {n} frames")
 
 
 if __name__ == "__main__":
