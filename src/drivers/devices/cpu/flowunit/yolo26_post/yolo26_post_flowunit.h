@@ -23,6 +23,7 @@
 #include <modelbox/flowunit.h>
 
 #include <opencv2/opencv.hpp>
+#include <unordered_set>
 
 #include "modelbox/buffer.h"
 
@@ -65,6 +66,7 @@ class Yolo26PostFlowUnit : public modelbox::FlowUnit {
   int num_classes_{80};
   float conf_threshold_{0.25F};
   float iou_threshold_{0.45F};
+  std::unordered_set<int> class_allowlist_;
 };
 
 #endif  // MODELBOX_FLOWUNIT_YOLO26_POST_CPU_H_
