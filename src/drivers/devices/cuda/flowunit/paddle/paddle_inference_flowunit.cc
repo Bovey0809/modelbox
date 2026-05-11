@@ -61,7 +61,7 @@ modelbox::Status PaddleInferenceFlowUnit::Open(
     p.output_names = out_ports_;
   }
 
-  engine_ = std::make_unique<modelbox::PaddleInference>();
+  engine_.reset(new modelbox::PaddleInference());
   auto st = engine_->Init(p);
   if (!st) {
     return st;
