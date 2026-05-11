@@ -70,6 +70,7 @@ graphconf = '''digraph paddle_ocr_video {
     crop_rotate [type=flowunit, flowunit=paddle_ocr_crop_rotate, device=cpu, deviceid=0]
     cls_infer   [type=flowunit, flowunit=ch_ppocr_mobile_v2_0_cls_infer, device=cuda, deviceid=0,
                  config.gpu_id=0, config.enable_trt=false, config.trt_precision="fp32"]
+    cls_pre     [type=flowunit, flowunit=paddle_ocr_cls_pre,  device=cpu, deviceid=0]
     cls_post    [type=flowunit, flowunit=paddle_ocr_cls_post, device=cpu, deviceid=0]
     rec_pre     [type=flowunit, flowunit=paddle_ocr_rec_pre,  device=cpu, deviceid=0]
     rec_infer   [type=flowunit, flowunit=ch_PP-OCRv4_rec_infer, device=cuda, deviceid=0,
@@ -91,9 +92,10 @@ graphconf = '''digraph paddle_ocr_video {
 
     det_post:out_image              -> crop_rotate:in_image
 
-    crop_rotate:out_crop            -> cls_infer:x
+    crop_rotate:out_crop            -> cls_pre:in_crop
+    cls_pre:out_tensor              -> cls_infer:x
+    cls_pre:out_crop                -> cls_post:in_crop
     cls_infer:"softmax_0.tmp_0"     -> cls_post:in_logits
-    crop_rotate:out_crop            -> cls_post:in_crop
 
     cls_post:out_crop               -> rec_pre:in_crop
     rec_pre:out_tensor              -> rec_infer:x
