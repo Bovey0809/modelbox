@@ -44,15 +44,15 @@ modelbox::Status PaddleInferenceFlowUnit::Open(
   }
 
   modelbox::PaddleInferenceParams p;
-  p.model_file = opts->GetString("config.model_file", unit_desc->GetModelEntry());
-  p.params_file = opts->GetString("config.params_file");
+  p.model_file = opts->GetString("model_file", unit_desc->GetModelEntry());
+  p.params_file = opts->GetString("params_file");
   p.device = "gpu";
-  p.gpu_id = opts->GetInt32("config.gpu_id", 0);
-  p.enable_trt = opts->GetBool("config.enable_trt", false);
-  p.trt_workspace_mb = opts->GetInt32("config.trt_workspace_mb", 256);
-  p.trt_precision = opts->GetString("config.trt_precision", "fp32");
-  p.input_names = opts->GetStrings("config.input_name");
-  p.output_names = opts->GetStrings("config.output_name");
+  p.gpu_id = opts->GetInt32("gpu_id", 0);
+  p.enable_trt = opts->GetBool("enable_trt", false);
+  p.trt_workspace_mb = opts->GetInt32("trt_workspace_mb", 256);
+  p.trt_precision = opts->GetString("trt_precision", "fp32");
+  p.input_names = opts->GetStrings("input_name");
+  p.output_names = opts->GetStrings("output_name");
 
   if (p.input_names.empty()) {
     p.input_names = in_ports_;
