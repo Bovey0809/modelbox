@@ -237,6 +237,10 @@ modelbox::Status Yolo26PostFlowUnit::Process(
         if (score < conf_threshold_) {
           continue;
         }
+        if (!class_allowlist_.empty() &&
+            class_allowlist_.count(class_id) == 0) {
+          continue;
+        }
         Detection det;
         det.x1 = x1 * scale_x;
         det.y1 = y1 * scale_y;
@@ -287,6 +291,9 @@ MODELBOX_FLOWUNIT(Yolo26PostFlowUnit, desc) {
       "conf_threshold", "float", true, "0.25", "minimum class score"));
   desc.AddFlowUnitOption(modelbox::FlowUnitOption(
       "iou_threshold", "float", true, "0.45", "NMS IoU threshold"));
+  desc.AddFlowUnitOption(modelbox::FlowUnitOption(
+      "class_allowlist", "string", false, "",
+      "comma-separated class IDs to keep (empty = all classes)"));
 }
 
 MODELBOX_DRIVER_FLOWUNIT(desc) {
