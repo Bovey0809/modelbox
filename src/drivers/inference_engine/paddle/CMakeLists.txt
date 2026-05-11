@@ -29,10 +29,10 @@ endif()
 
 message(STATUS "MODELBOX_PADDLE_FOUND: using ${PaddleInference_DIR}")
 
-set(MODELBOX_PADDLE_FOUND TRUE PARENT_SCOPE)
-set(PADDLE_INFERENCE_INCLUDE "${PaddleInference_DIR}/paddle/include" PARENT_SCOPE)
-set(PADDLE_INFERENCE_LIB_DIR "${PaddleInference_DIR}/paddle/lib" PARENT_SCOPE)
-set(PADDLE_INFERENCE_DIR "${PaddleInference_DIR}" PARENT_SCOPE)
+set(MODELBOX_PADDLE_FOUND TRUE CACHE INTERNAL "")
+set(PADDLE_INFERENCE_INCLUDE "${PaddleInference_DIR}/paddle/include" CACHE INTERNAL "")
+set(PADDLE_INFERENCE_LIB_DIR "${PaddleInference_DIR}/paddle/lib" CACHE INTERNAL "")
+set(PADDLE_INFERENCE_DIR "${PaddleInference_DIR}" CACHE INTERNAL "")
 
 include_directories(${CMAKE_CURRENT_LIST_DIR})
 include_directories(${LIBMODELBOX_INCLUDE})
@@ -46,4 +46,5 @@ add_library(modelbox-engine-paddle STATIC ${SRC})
 target_compile_options(modelbox-engine-paddle PRIVATE -fPIC)
 target_link_libraries(modelbox-engine-paddle paddle_inference ${LIBMODELBOX_SHARED})
 
-set(MODELBOX_ENGINE_PADDLE_TARGET modelbox-engine-paddle PARENT_SCOPE)
+set(MODELBOX_ENGINE_PADDLE_TARGET modelbox-engine-paddle CACHE INTERNAL "")
+set(MODELBOX_ENGINE_PADDLE_INCLUDE ${CMAKE_CURRENT_LIST_DIR} CACHE INTERNAL "")
