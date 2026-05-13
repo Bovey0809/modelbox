@@ -113,11 +113,71 @@ def test_cross_confirm_missing_ball_without_require_accepts():
     print("test_cross_confirm_missing_ball_without_require_accepts: PASS")
 
 
+# --- Hitter assignment tests (Task 6b) ---
+
+def _person(tid: int, bbox: tuple[float, float, float, float],
+            wrist_l: tuple[float, float], wrist_r: tuple[float, float]) -> dict:
+    """Build a tracked-pose dict mirroring the yolo_pose_track_post format."""
+    kpts = [[0.0, 0.0, 0.0]] * 17
+    kpts[9] = [wrist_l[0], wrist_l[1], 0.9]   # COCO L wrist
+    kpts[10] = [wrist_r[0], wrist_r[1], 0.9]  # COCO R wrist
+    return {"track_id": tid, "bbox": list(bbox), "score": 0.9, "kpts": kpts}
+
+
+def test_assign_hitter_picks_nearest_wrist():
+    poses = [
+        _person(7, (50, 50, 200, 300), wrist_l=(100, 100), wrist_r=(180, 200)),
+        _person(8, (500, 50, 700, 300), wrist_l=(550, 100), wrist_r=(680, 200)),
+    ]
+    pose_map = {50: poses}
+    ball = (105, 103, 0.9)
+    info = assign_hitter(pose_map, ball, hit_frame=50)
+    assert info is not None
+    assert info["track_id"] == 7, info
+    assert not info["tie_resolved"]
+    print("test_assign_hitter_picks_nearest_wrist: PASS")
+
+
+def test_assign_hitter_no_player_returns_none():
+    info = assign_hitter({}, (100, 100, 0.9), hit_frame=50)
+    assert info is None
+    print("test_assign_hitter_no_player_returns_none: PASS")
+
+
+def test_assign_hitter_tie_break_by_track_id():
+    # Both tracks have wrists at the same position -> tied at 0.0 distance.
+    # Both bboxes contain the ball-box (ball_box = [140..170 × 140..170]):
+    # track 2's bbox is [100..200, 100..200], track 1's is [125..200, 100..200].
+    # Their IoUs with ball_box are identical (ball_box fully inside both).
+    # So lower track_id (1) wins.
+    poses = [
+        _person(2, (100, 100, 200, 200), wrist_l=(155, 155), wrist_r=(160, 160)),
+        _person(1, (125, 100, 200, 200), wrist_l=(155, 155), wrist_r=(160, 160)),
+    ]
+    info = assign_hitter({50: poses}, (155, 155, 0.9), hit_frame=50)
+    assert info is not None and info["track_id"] == 1, info
+    assert info["tie_resolved"], "should have flipped tie_resolved"
+    print("test_assign_hitter_tie_break_by_track_id: PASS")
+
+
+def test_assign_hitter_uses_nearby_frame_when_target_empty():
+    poses = [_person(7, (50, 50, 200, 300), (100, 100), (180, 200))]
+    # Pose data is at frame 48, but the hit is at frame 50.
+    info = assign_hitter({48: poses}, (105, 103, 0.9), hit_frame=50)
+    assert info is not None and info["track_id"] == 7, info
+    assert info["frame_used"] == 48, f"frame_used={info['frame_used']}"
+    print("test_assign_hitter_uses_nearby_frame_when_target_empty: PASS")
+
+
 def main() -> int:
     test_cross_confirm_direction_flip_accepts()
     test_cross_confirm_no_flip_rejects()
     test_cross_confirm_missing_ball_with_require_drops()
     test_cross_confirm_missing_ball_without_require_accepts()
+    test_assign_hitter_picks_nearest_wrist()
+    test_assign_hitter_no_player_returns_none()
+    test_assign_hitter_tie_break_by_track_id()
+    test_assign_hitter_uses_nearby_frame_when_target_empty()
     # More tests appended in tasks 6b–6d.
     return 0
 

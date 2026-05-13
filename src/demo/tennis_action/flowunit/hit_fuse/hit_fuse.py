@@ -63,9 +63,68 @@ def cross_confirm(ball_map: dict[int, tuple[float, float, float]],
     return (False, "trajectory_not_consistent")
 
 
-# Stubs to be filled in tasks 6b–6d.
-def assign_hitter(*a, **k):
-    raise NotImplementedError("Filled in Task 6b")
+def _bbox_iou_simple(a: list[float], b: list[float]) -> float:
+    ix1, iy1 = max(a[0], b[0]), max(a[1], b[1])
+    ix2, iy2 = min(a[2], b[2]), min(a[3], b[3])
+    iw, ih = max(0.0, ix2 - ix1), max(0.0, iy2 - iy1)
+    inter = iw * ih
+    if inter <= 0:
+        return 0.0
+    aa = max(0.0, a[2] - a[0]) * max(0.0, a[3] - a[1])
+    bb = max(0.0, b[2] - b[0]) * max(0.0, b[3] - b[1])
+    union = aa + bb - inter
+    return inter / union if union > 0 else 0.0
+
+
+def assign_hitter(pose_map: dict[int, list[dict[str, Any]]],
+                  ball: tuple[float, float, float],
+                  hit_frame: int) -> dict[str, Any] | None:
+    """Pick the track whose closer wrist (L or R) is nearest to `ball` at
+    `hit_frame`. Look ±2 frames if the target frame is empty.
+
+    Returns {track_id, dist, tie_resolved, frame_used} or None when no track
+    can be located in [f-2, f+2].
+    """
+    bx, by, _ = ball
+    poses = None
+    frame_used = hit_frame
+    for d in (0, -1, 1, -2, 2):
+        cand = pose_map.get(hit_frame + d)
+        if cand:
+            poses = cand
+            frame_used = hit_frame + d
+            break
+    if not poses:
+        return None
+
+    def _wrist_dist(p):
+        lw = p["kpts"][9]
+        rw = p["kpts"][10]
+        d_l = ((lw[0] - bx) ** 2 + (lw[1] - by) ** 2) ** 0.5
+        d_r = ((rw[0] - bx) ** 2 + (rw[1] - by) ** 2) ** 0.5
+        return min(d_l, d_r)
+
+    dists = [(p["track_id"], _wrist_dist(p), p) for p in poses]
+    dists.sort(key=lambda t: t[1])
+    best_tid, best_dist, best_p = dists[0]
+
+    tie_resolved = False
+    if len(dists) > 1 and abs(dists[1][1] - best_dist) < 5.0:
+        ball_box = [bx - 15, by - 15, bx + 15, by + 15]
+        iou_best = _bbox_iou_simple(best_p["bbox"], ball_box)
+        iou_alt = _bbox_iou_simple(dists[1][2]["bbox"], ball_box)
+        if iou_alt > iou_best:
+            best_tid, best_dist, best_p = dists[1]
+            tie_resolved = True
+        elif iou_alt == iou_best and dists[1][0] < best_tid:
+            best_tid, best_dist, best_p = dists[1]
+            tie_resolved = True
+
+    return {"track_id": int(best_tid), "dist": float(best_dist),
+            "tie_resolved": tie_resolved, "frame_used": int(frame_used)}
+
+
+# Stubs to be filled in tasks 6c–6d.
 
 
 def assemble_window(*a, **k):
