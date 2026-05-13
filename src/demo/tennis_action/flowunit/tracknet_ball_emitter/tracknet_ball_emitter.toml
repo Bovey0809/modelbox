@@ -1,0 +1,32 @@
+#
+# Copyright 2026 The Modelbox Project Authors. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+[base]
+name = "tracknet_ball_emitter"
+device = "cpu"
+version = "1.0.0"
+description = "Emit (cx, cy, peak, frame_idx) per frame from a TrackNet heatmap in source-frame coords."
+entry = "tracknet_ball_emitter@TracknetBallEmitter"
+type = "python"
+
+[config]
+score_thr = 0.3
+mask_ratio = 0.5
+net_h = 288
+net_w = 512
+source_width = 1280
+source_height = 720
+
+[input]
+[input.input1]
+name = "heatmaps"
+
+[output]
+[output.output1]
+name = "ball_pos"
