@@ -20,3 +20,10 @@ build
 #clangd
 .cache
 compile_commands.json
+
+# Claude Code local skills/config
+.claude/
+
+# SUTrack artefacts > 100MB — regenerate locally; see assets/sutrack/README.md
+/assets/sutrack/sutrack_b224.onnx
+/assets/sutrack/sutrack_b224.mlpackage/

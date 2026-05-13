@@ -341,16 +341,41 @@ modelbox::Status CoreMLInference::Infer(
         acc *= shape_arr[k].integerValue;
       }
 
+      // Allocate a CoreML-owned MLMultiArray and copy the input into it.
+      // initWithDataPointer:... only takes a view of the modelbox buffer's
+      // memory and Core ML can read it lazily — which leads to stale reads
+      // when this Process call returns before the model evaluates the
+      // feature (observed: every Infer call producing the same logits even
+      // though the wrapped pointer's bytes were distinct at wrap time).
+      // Decide allocation dtype. CoreML's compileModelAtURL on Apple Silicon
+      // downcasts FP32 inputs to FP16 in the multiArrayConstraint even though
+      // the .mlpackage spec declares FP32. Honour the source buffer's actual
+      // element type (default FP32 — modelbox upstream flowunits feed FP32
+      // tensors) and let CoreML handle any internal FP16 cast. If the source
+      // bytes don't match the FP32 size, fall back to the constraint dtype.
+      MLMultiArrayDataType alloc_dtype = dtype;
+      NSInteger total = 1;
+      for (NSNumber *d in shape_arr) total *= d.integerValue;
+      bool src_is_fp32 = (buffer->GetBytes() == (size_t)(total) * sizeof(float));
+      if (src_is_fp32) {
+        alloc_dtype = MLMultiArrayDataTypeFloat32;
+      }
       NSError *err = nil;
-      MLMultiArray *arr = [[MLMultiArray alloc]
-          initWithDataPointer:const_cast<void *>(buffer->ConstData())
-                        shape:shape_arr
-                     dataType:dtype
-                      strides:strides
-                  deallocator:^(void *){
-                      // Modelbox owns the buffer; no-op.
-                  }
-                        error:&err];
+      MLMultiArray *arr = [[MLMultiArray alloc] initWithShape:shape_arr
+                                                     dataType:alloc_dtype
+                                                        error:&err];
+      if (arr != nil) {
+        const void *src = buffer->ConstData();
+        size_t element_bytes = MlElementSize(alloc_dtype);
+        [arr getMutableBytesWithHandler:^(void *dst_bytes, NSInteger size,
+                                          NSArray<NSNumber *> *_unused) {
+          if (dst_bytes != nullptr &&
+              size >= (NSInteger)(total * (NSInteger)element_bytes)) {
+            std::memcpy(dst_bytes, src,
+                        (size_t)(total) * element_bytes);
+          }
+        }];
+      }
       if (arr == nil) {
         auto msg = std::string("coreml: MLMultiArray init failed: ") +
                    (err ? err.localizedDescription.UTF8String : "unknown");

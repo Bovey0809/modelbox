@@ -97,6 +97,7 @@ find_package(ROCKCHIP)
 find_package(DLENGINE)
 find_package(INTELGPU)
 find_package(OPENVINO)
+find_package(ONNXRUNTIME)
 find_package(COREML)
 
 add_subdirectory(thirdparty)
