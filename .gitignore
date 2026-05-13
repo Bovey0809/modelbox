@@ -27,3 +27,7 @@ compile_commands.json
 # SUTrack artefacts > 100MB — regenerate locally; see assets/sutrack/README.md
 /assets/sutrack/sutrack_b224.onnx
 /assets/sutrack/sutrack_b224.mlpackage/
+
+# tennis_action stub/generated artefacts — regenerate with scripts/build_tennis_action_stub_onnx.py
+/assets/tennis_action/*.onnx
+/assets/tennis_action/*meta*.json
