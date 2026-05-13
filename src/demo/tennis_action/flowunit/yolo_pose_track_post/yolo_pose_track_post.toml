@@ -1,0 +1,38 @@
+#
+# Copyright 2026 The Modelbox Project Authors. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+[base]
+name = "yolo_pose_track_post"
+device = "cpu"
+version = "1.0.0"
+description = "YOLO-pose NMS + greedy-IoU SORT tracker; emits structured tracked_poses port."
+entry = "yolo_pose_track_post@YoloPoseTrackPost"
+type = "python"
+
+[config]
+conf_threshold = 0.25
+iou_threshold = 0.45
+kpt_threshold = 0.5
+track_iou = 0.3
+max_lost = 20
+net_h = 640
+net_w = 640
+source_width = 1280
+source_height = 720
+emit_overlay = false
+
+[input]
+[input.input1]
+name = "in_image"
+[input.input2]
+name = "in_feat"
+
+[output]
+[output.output1]
+name = "tracked_poses"
