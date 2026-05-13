@@ -1,0 +1,19 @@
+[driver]
+dir = [
+    "@DEMO_HIT_SOUND_FLOWUNIT_DIR@"
+]
+[flow]
+name = "HitSound"
+desc = "Tennis hit-sound detection over a posted video path via the tennis_audio_seg ONNX classifier."
+[graph]
+format = "graphviz"
+graphconf = '''digraph hit_sound {
+    node [shape=Mrecord]
+    httpserver_sync_receive[type=flowunit, flowunit=httpserver_sync_receive, device=cpu, time_out_ms=300000, endpoint="http://0.0.0.0:7771", max_requests=4]
+    hit_sound_detect[type=flowunit, flowunit=hit_sound_detect, device=cpu]
+    httpserver_sync_reply[type=flowunit, flowunit=httpserver_sync_reply, device=cpu]
+
+    httpserver_sync_receive:out_request_info -> hit_sound_detect:in_data
+    hit_sound_detect:out_data -> httpserver_sync_reply:in_reply_info
+}
+'''

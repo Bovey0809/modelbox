@@ -1,0 +1,39 @@
+#
+# Copyright 2026 The Modelbox Project Authors. All Rights Reserved.
+#
+[base]
+name = "hit_sound_detect"
+device = "cpu"
+version = "1.0.0"
+description = "tennis hit-sound detection: extract audio from mp4, run ONNX classifier over sliding mel windows, emit hit/rally intervals + overlay video"
+entry = "hit_sound_detect@HitSoundDetect"
+type = "python"
+
+[config]
+# ONNX model path; relative paths are resolved against this flowunit's install dir.
+model_path = "best.onnx"
+# Mel + window params (must match training; defaults from deploy_weights/metrics.json).
+target_sr = 16000
+window_sec = 0.5
+step_sec = 0.02
+n_fft = 512
+hop_length = 170
+n_mels = 128
+# Decision + postprocess knobs.
+threshold = 0.5
+smooth_win = 5
+max_hit_dur = 1.0
+max_gap = 3.0
+buffer_time = 4.0
+# Where the demo writes outputs. Per-request keys in the JSON body override these.
+default_intervals_csv = "/tmp/hit_sound_intervals.csv"
+default_overlay_mp4 = "/tmp/hit_sound_overlay.mp4"
+write_overlay = true
+
+[input]
+[input.input1]
+name = "in_data"
+
+[output]
+[output.output1]
+name = "out_data"

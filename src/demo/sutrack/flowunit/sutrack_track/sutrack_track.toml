@@ -1,0 +1,31 @@
+#
+# Copyright 2026 The Modelbox Project Authors. All Rights Reserved.
+#
+[base]
+name = "sutrack_track"
+device = "cpu"
+version = "1.0.0"
+description = "SUTrack single-object tracker — wraps the SUTRACK class from the modelS/sutrack codebase. Triggered by JSON: {video_path, init_bbox:[x,y,w,h], output_video, output_json}. Returns bbox trajectory."
+entry = "sutrack_track@SUTrackTrack"
+type = "python"
+
+[config]
+# Absolute path to the modelS/sutrack codebase (must contain modelloader.py + sutrack/lib/).
+# The flowunit prepends this to sys.path at open() time so the bundled inference code is importable.
+sutrack_dir = "/Users/houbowei/modelS/models/sutrack"
+# Model name in sutrack_dir/config.json. b224 is the default we exported.
+model_name = "sutrack_b224"
+# Optional override for the SUTrack config.json (defaults to sutrack_dir/config.json).
+config_path = ""
+device = "cpu"
+# Where to write outputs by default; per-request keys override these.
+default_output_video = "/tmp/sutrack_overlay.mp4"
+default_output_json = "/tmp/sutrack_bboxes.json"
+
+[input]
+[input.input1]
+name = "in_data"
+
+[output]
+[output.output1]
+name = "out_data"

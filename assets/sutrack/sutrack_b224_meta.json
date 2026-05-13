@@ -1,0 +1,41 @@
+{
+  "model_name": "sutrack_b224",
+  "use_text": false,
+  "template_size": 112,
+  "search_size": 224,
+  "channels": 6,
+  "embed_dim": 512,
+  "num_templates": 2,
+  "input_shapes": {
+    "template": [
+      2,
+      6,
+      112,
+      112
+    ],
+    "search": [
+      1,
+      6,
+      224,
+      224
+    ],
+    "template_anno": [
+      2,
+      4
+    ]
+  },
+  "output_names": [
+    "score_map",
+    "size_map",
+    "offset_map",
+    "pred_boxes"
+  ],
+  "opset": 17,
+  "dynamic_batch": false,
+  "token_type_indicate": true,
+  "window": true,
+  "template_factor": 2.0,
+  "search_factor": 4.0,
+  "update_interval": 25,
+  "update_threshold": 0.7
+}

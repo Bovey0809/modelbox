@@ -1,0 +1,36 @@
+#
+# Copyright 2026 The Modelbox Project Authors. All Rights Reserved.
+#
+[base]
+name = "hit_postprocess"
+device = "cpu"
+version = "1.0.0"
+description = "Collapse the per-window logit stream into hit/rally intervals, write CSV + overlay video, and emit a JSON summary."
+entry = "hit_postprocess@HitPostprocess"
+type = "python"
+
+collapse = true
+
+[config]
+step_sec = 0.02
+window_sec = 0.5
+threshold = 0.5
+smooth_win = 5
+max_hit_dur = 1.0
+max_gap = 3.0
+buffer_time = 4.0
+interval_mode = "hit"
+intervals_csv = "/tmp/hit_sound_intervals.csv"
+overlay_mp4 = "/tmp/hit_sound_overlay.mp4"
+# Overlay/CSV needs the original video; set this to the same path used by
+# hit_window_emitter.video_path so the demo is self-contained.
+video_path = "/Users/houbowei/Desktop/tennis/2026-01-04-action-06.mp4"
+write_overlay = true
+
+[input]
+[input.input1]
+name = "logits"
+
+[output]
+[output.output1]
+name = "out_data"

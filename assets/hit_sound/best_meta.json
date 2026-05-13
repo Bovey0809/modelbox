@@ -1,0 +1,29 @@
+{
+  "ckpt": "modelS/models/tennis_audio_seg/checkpoints/deploy_weights/best.pt",
+  "output": "modelS/models/tennis_audio_seg/checkpoints/deploy_weights/best.onnx",
+  "model_type": "small_cnnv2",
+  "global_pool_type": "avg",
+  "dataset_params": {
+    "mel_nfft": 512,
+    "mel_hop": 170,
+    "mel_nmels": 128,
+    "default_L": 0.5,
+    "resample_sr": 16000
+  },
+  "window_sec": 0.5,
+  "input_shape": [
+    1,
+    1,
+    128,
+    48
+  ],
+  "input_name": "input",
+  "output_name": "logits",
+  "num_classes": 2,
+  "class_order": [
+    "no",
+    "kickball"
+  ],
+  "opset": 17,
+  "dynamic_batch": false
+}

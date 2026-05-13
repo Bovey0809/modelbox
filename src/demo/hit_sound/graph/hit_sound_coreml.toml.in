@@ -1,0 +1,23 @@
+[driver]
+dir = [
+    "@DEMO_HIT_SOUND_FLOWUNIT_DIR@"
+]
+[flow]
+name = "HitSoundCoreML"
+desc = "Hit-sound detection via ModelBox's Core ML inference flowunit on Apple Silicon (CPU + GPU + ANE). Trigger by POSTing any JSON; video_path is set in the emitter [config]."
+[graph]
+format = "graphviz"
+graphconf = '''digraph hit_sound_coreml {
+    node [shape=Mrecord]
+    httpserver_sync_receive[type=flowunit, flowunit=httpserver_sync_receive, device=cpu, time_out_ms=300000, endpoint="http://0.0.0.0:7774", max_requests=4]
+    hit_window_emitter[type=flowunit, flowunit=hit_window_emitter, device=cpu]
+    hit_sound_infer[type=flowunit, flowunit=hit_sound_infer_coreml, device=apple_silicon, batch_size=1]
+    hit_postprocess[type=flowunit, flowunit=hit_postprocess, device=cpu]
+    httpserver_sync_reply[type=flowunit, flowunit=httpserver_sync_reply, device=cpu]
+
+    httpserver_sync_receive:out_request_info -> hit_window_emitter:in_data
+    hit_window_emitter:mel  -> hit_sound_infer:input
+    hit_sound_infer:logits  -> hit_postprocess:logits
+    hit_postprocess:out_data -> httpserver_sync_reply:in_reply_info
+}
+'''

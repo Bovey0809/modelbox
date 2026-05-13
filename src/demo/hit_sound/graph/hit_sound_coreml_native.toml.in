@@ -1,0 +1,21 @@
+[driver]
+dir = [
+    "@DEMO_HIT_SOUND_FLOWUNIT_DIR@"
+]
+[flow]
+name = "HitSoundCoreMLNative"
+desc = "Native macOS pipeline: precomputed mel windows -> CoreML inference -> intervals CSV. No Python, no httpserver. Generate mel_bin_path via scripts/precompute_mels.py."
+[graph]
+format = "graphviz"
+graphconf = '''digraph hit_sound_coreml_native {
+    node [shape=Mrecord]
+    hit_trigger[type=flowunit, flowunit=hit_trigger, device=cpu]
+    hit_audio_source[type=flowunit, flowunit=hit_audio_source, device=cpu, mel_bin_path="/tmp/hit_sound_mels.bin"]
+    hit_sound_infer[type=flowunit, flowunit=hit_sound_infer_coreml, device=apple_silicon, batch_size=1]
+    hit_intervals_sink[type=flowunit, flowunit=hit_intervals_sink, device=cpu, step_sec=0.02, window_sec=0.5, threshold=0.5, smooth_win=5, max_hit_dur=1.0, max_gap=3.0, buffer_time=4.0, interval_mode="hit", intervals_csv="/tmp/hit_sound_intervals_native.csv", summary_json="/tmp/hit_sound_summary.json"]
+
+    hit_trigger:out         -> hit_audio_source:trigger
+    hit_audio_source:mel    -> hit_sound_infer:input
+    hit_sound_infer:logits  -> hit_intervals_sink:logits
+}
+'''

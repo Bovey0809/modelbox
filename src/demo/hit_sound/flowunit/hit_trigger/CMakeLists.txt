@@ -1,0 +1,33 @@
+#
+# Copyright 2026 The Modelbox Project Authors. All Rights Reserved.
+#
+cmake_minimum_required(VERSION 3.10)
+set(UNIT_DEVICE "cpu")
+set(UNIT_NAME "hit_trigger")
+project(modelbox-flowunit-${UNIT_DEVICE}-${UNIT_NAME})
+
+set(UNIT_SOURCE_FILE ${CMAKE_CURRENT_SOURCE_DIR}/${UNIT_NAME}_flowunit.cc)
+
+include_directories(${CMAKE_CURRENT_LIST_DIR})
+include_directories(${LIBMODELBOX_INCLUDE})
+include_directories(${LIBMODELBOX_BASE_INCLUDE})
+include_directories(${LIBMODELBOX_DEVICE_CPU_INCLUDE})
+include_directories(${HUAWEI_SECURE_C_INCLUDE_DIR})
+
+set(MODELBOX_UNIT_SHARED modelbox-unit-${UNIT_DEVICE}-${UNIT_NAME}-shared)
+add_library(${MODELBOX_UNIT_SHARED} SHARED ${UNIT_SOURCE_FILE})
+set_target_properties(${MODELBOX_UNIT_SHARED} PROPERTIES
+    SOVERSION ${MODELBOX_VERSION_MAJOR}
+    VERSION ${MODELBOX_VERSION_MAJOR}.${MODELBOX_VERSION_MINOR}.${MODELBOX_VERSION_PATCH}
+)
+target_link_libraries(${MODELBOX_UNIT_SHARED}
+    ${LIBMODELBOX_DEVICE_CPU_SHARED} ${LIBMODELBOX_SHARED}
+    pthread dl)
+set_target_properties(${MODELBOX_UNIT_SHARED} PROPERTIES
+    OUTPUT_NAME "modelbox-unit-${UNIT_DEVICE}-${UNIT_NAME}")
+
+install(TARGETS ${MODELBOX_UNIT_SHARED}
+    COMPONENT demo
+    RUNTIME DESTINATION ${CMAKE_INSTALL_FULL_BINDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_FULL_LIBDIR}
+    OPTIONAL)

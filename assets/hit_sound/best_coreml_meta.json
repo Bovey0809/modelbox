@@ -1,0 +1,20 @@
+{
+  "ckpt": "/Users/houbowei/modelS/models/tennis_audio_seg/checkpoints/deploy_weights/best.pt",
+  "output": "/Users/houbowei/modelbox/assets/hit_sound/best.mlpackage",
+  "model_type": "small_cnnv2",
+  "input_name": "input",
+  "input_shape": [
+    1,
+    1,
+    128,
+    48
+  ],
+  "output_name": "logits",
+  "compute_units": "ALL",
+  "precision": "float32",
+  "num_classes": 2,
+  "class_order": [
+    "no",
+    "kickball"
+  ]
+}
