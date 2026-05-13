@@ -169,6 +169,67 @@ def test_assign_hitter_uses_nearby_frame_when_target_empty():
     print("test_assign_hitter_uses_nearby_frame_when_target_empty: PASS")
 
 
+# --- Window assembly tests (Task 6c) ---
+
+def _ts(tid: int, x: float, y: float) -> dict:
+    """Tracked pose at a fixed wrist position. All 17 kpts at (x, y, 0.9)."""
+    kpts = [[x, y, 0.9] for _ in range(17)]
+    return {"track_id": tid,
+            "bbox": [x - 50, y - 50, x + 50, y + 50],
+            "score": 0.9, "kpts": kpts}
+
+
+def test_assemble_window_full_coverage():
+    pose_map = {f: [_ts(7, 100 + f, 200)] for f in range(20, 60)}
+    res = assemble_window(pose_map, track_id=7, hit_frame=40, T=32,
+                          min_coverage=0.75, image_width=1280, image_height=720)
+    assert res is not None
+    arr, meta = res
+    assert arr.shape == (32, 17, 3), arr.shape
+    assert not meta["boundary_padded"]
+    # Normalized x at hit_frame center should be roughly (100 + 40) / 1280.
+    mid_x = arr[16, 0, 0]  # kpt 0, x channel, T/2 = 16
+    assert 0.0 < mid_x < 0.2, f"normalized mid_x={mid_x}"
+    print("test_assemble_window_full_coverage: PASS")
+
+
+def test_assemble_window_interpolates_gaps():
+    """30/32 frames present (2 interior gaps). assemble_window should
+    interpolate, not drop."""
+    pose_map = {}
+    for f in range(20, 60):
+        if f in (38, 41):
+            continue
+        pose_map[f] = [_ts(7, 100 + f, 200)]
+    res = assemble_window(pose_map, track_id=7, hit_frame=40, T=32,
+                          min_coverage=0.75, image_width=1280, image_height=720)
+    assert res is not None
+    arr, meta = res
+    assert arr.shape == (32, 17, 3)
+    print("test_assemble_window_interpolates_gaps: PASS")
+
+
+def test_assemble_window_coverage_too_low_drops():
+    # Only 6 frames in the window range have data — 6/32 = 18.75% << 75%.
+    pose_map = {f: [_ts(7, 100 + f, 200)] for f in range(20, 26)}
+    res = assemble_window(pose_map, track_id=7, hit_frame=40, T=32,
+                          min_coverage=0.75, image_width=1280, image_height=720)
+    assert res is None
+    print("test_assemble_window_coverage_too_low_drops: PASS")
+
+
+def test_assemble_window_boundary_padding():
+    """Hit at frame 5 with T=32 -> window [-11, 21). Leading frames < 0
+    are padded from the first valid frame."""
+    pose_map = {f: [_ts(7, 100 + f, 200)] for f in range(0, 30)}
+    res = assemble_window(pose_map, track_id=7, hit_frame=5, T=32,
+                          min_coverage=0.75, image_width=1280, image_height=720)
+    assert res is not None
+    arr, meta = res
+    assert meta["boundary_padded"], "boundary_padded should be True"
+    print("test_assemble_window_boundary_padding: PASS")
+
+
 def main() -> int:
     test_cross_confirm_direction_flip_accepts()
     test_cross_confirm_no_flip_rejects()
@@ -178,6 +239,10 @@ def main() -> int:
     test_assign_hitter_no_player_returns_none()
     test_assign_hitter_tie_break_by_track_id()
     test_assign_hitter_uses_nearby_frame_when_target_empty()
+    test_assemble_window_full_coverage()
+    test_assemble_window_interpolates_gaps()
+    test_assemble_window_coverage_too_low_drops()
+    test_assemble_window_boundary_padding()
     # More tests appended in tasks 6b–6d.
     return 0
 

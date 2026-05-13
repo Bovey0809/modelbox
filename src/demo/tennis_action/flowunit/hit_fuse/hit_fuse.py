@@ -127,8 +127,104 @@ def assign_hitter(pose_map: dict[int, list[dict[str, Any]]],
 # Stubs to be filled in tasks 6c–6d.
 
 
-def assemble_window(*a, **k):
-    raise NotImplementedError("Filled in Task 6c")
+def _find_track_kpts(poses: list[dict[str, Any]], track_id: int) \
+        -> list[list[float]] | None:
+    """Return the kpts list of `track_id` in `poses`, or None if absent."""
+    for p in poses:
+        if p["track_id"] == track_id:
+            return p["kpts"]
+    return None
+
+
+def assemble_window(pose_map: dict[int, list[dict[str, Any]]],
+                    track_id: int, hit_frame: int, T: int,
+                    min_coverage: float, image_width: int,
+                    image_height: int) -> tuple[np.ndarray, dict] | None:
+    """Gather T keypoint frames of `track_id` centered on `hit_frame`,
+    linear-interpolating short gaps and padding boundaries.
+
+    Returns (np.ndarray [T, 17, 3] in normalized coords, meta) or None
+    when coverage is below `min_coverage`.
+    """
+    half = T // 2
+    f_start = hit_frame - half
+    f_end = f_start + T  # exclusive
+
+    raw: list[list[list[float]] | None] = []
+    for f in range(f_start, f_end):
+        poses = pose_map.get(f, [])
+        raw.append(_find_track_kpts(poses, track_id))
+
+    valid_count = sum(1 for k in raw if k is not None)
+    # Leading Nones will be boundary-padded, so they count toward coverage;
+    # trailing Nones represent genuine data loss and do not.
+    first_valid_idx = next((i for i, k in enumerate(raw) if k is not None), -1)
+    if first_valid_idx == -1:
+        return None
+    effective_count = valid_count + first_valid_idx
+    if effective_count < int(min_coverage * T):
+        return None
+
+    boundary_padded = False
+
+    # Forward-fill leading None entries from the first valid kpts.
+    # first_valid_idx is already computed above (used in coverage check).
+    if first_valid_idx > 0:
+        boundary_padded = True
+        src = raw[first_valid_idx]
+        for i in range(first_valid_idx):
+            raw[i] = [list(p) for p in src]
+
+    # Back-fill trailing None entries from the last valid kpts.
+    # Index of the last valid entry in raw (count from the right).
+    last_rev = next((i for i, k in enumerate(reversed(raw)) if k is not None), -1)
+    last_idx = T - 1 - last_rev
+    if last_idx < T - 1:
+        boundary_padded = True
+        src = raw[last_idx]
+        for i in range(last_idx + 1, T):
+            raw[i] = [list(p) for p in src]
+
+    # Interpolate interior gaps. After boundary padding, raw[0] and raw[-1]
+    # are guaranteed non-None.
+    i = 0
+    while i < T:
+        if raw[i] is not None:
+            i += 1
+            continue
+        # Find the next valid frame.
+        j = i + 1
+        while j < T and raw[j] is None:
+            j += 1
+        if j >= T:
+            break  # No further valid frame (shouldn't happen after back-fill).
+        prev_idx = i - 1
+        prev_k = raw[prev_idx]
+        next_k = raw[j]
+        span = j - prev_idx
+        for fill_i in range(i, j):
+            alpha = (fill_i - prev_idx) / span
+            interp = []
+            for ki in range(17):
+                x = prev_k[ki][0] * (1 - alpha) + next_k[ki][0] * alpha
+                y = prev_k[ki][1] * (1 - alpha) + next_k[ki][1] * alpha
+                c = min(prev_k[ki][2], next_k[ki][2])
+                interp.append([float(x), float(y), float(c)])
+            raw[fill_i] = interp
+        i = j
+
+    # All entries should now be non-None.
+    arr = np.zeros((T, 17, 3), dtype=np.float32)
+    for ti, kpts in enumerate(raw):
+        if kpts is None:
+            # Should not occur; guard against runtime surprise.
+            return None
+        for ki, (x, y, c) in enumerate(kpts):
+            arr[ti, ki, 0] = x / image_width
+            arr[ti, ki, 1] = y / image_height
+            arr[ti, ki, 2] = c
+
+    return arr, {"boundary_padded": boundary_padded}
 
 
 class HitFuse(modelbox.FlowUnit):
