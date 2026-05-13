@@ -206,9 +206,14 @@ class YoloPoseTrackPost(modelbox.FlowUnit):
 
     def process(self, data_context):
         feat_in = data_context.input("in_feat")
+        image_in = data_context.input("in_image")
         poses_out = data_context.output("tracked_poses")
-        for buf in feat_in:
-            arr = np.frombuffer(buf.as_object(), dtype=np.float32)
+
+        # Iterate both ports together. ModelBox delivers them in lock-step (one
+        # buffer per port per frame); zip drains both even though in_image is
+        # only used when emit_overlay=true (deferred to a future task).
+        for feat_buf, _img_buf in zip(feat_in, image_in):
+            arr = np.frombuffer(feat_buf.as_object(), dtype=np.float32)
             try:
                 feat = arr.reshape(1, 56, -1)
             except ValueError:

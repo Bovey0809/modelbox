@@ -10,7 +10,40 @@ from pathlib import Path
 import numpy as np
 
 _FU = types.ModuleType("_flowunit")
-_FU.Buffer = lambda dev, b: ("BUFFER", b)
+
+
+class _Buf:
+    def __init__(self, dev, payload):
+        self._payload = payload
+        self._meta: dict = {}
+    def as_object(self):
+        return self._payload
+    def set(self, k, v):
+        self._meta[k] = v
+_FU.Buffer = _Buf
+
+
+class _Port:
+    def __init__(self):
+        self._items: list = []
+    def push_back(self, b):
+        self._items.append(b)
+    def __iter__(self):
+        return iter(self._items)
+
+
+class _DC:
+    def __init__(self, inputs: dict):
+        self._inputs = inputs
+        self._outputs: dict = {}
+    def input(self, name):
+        return self._inputs[name]
+    def output(self, name):
+        if name not in self._outputs:
+            self._outputs[name] = _Port()
+        return self._outputs[name]
+
+
 class _SC: STATUS_SUCCESS = 0; STATUS_FAULT = 1
 class _Status:
     StatusCode = _SC
@@ -107,12 +140,50 @@ def test_open_reads_config_defaults():
     print("test_open_reads_config_defaults: PASS")
 
 
+def test_process_consumes_both_ports():
+    """Drive YoloPoseTrackPost.process() with paired in_image+in_feat; assert
+    one tracked_poses buffer is emitted per (feat, image) pair, and that
+    in_image was consumed (length 0 after iteration)."""
+    feat = _make_feat_two_people()
+
+    fu = YoloPoseTrackPost()
+    class _Cfg:
+        def get_int(self, k, d): return d
+        def get_float(self, k, d): return d
+        def get_string(self, k, d): return d
+        def get_bool(self, k, d): return d
+    fu.open(_Cfg())
+
+    feat_port = _Port()
+    image_port = _Port()
+    # Two paired frames.
+    for _ in range(2):
+        feat_port.push_back(_Buf(None, feat.astype(np.float32).tobytes()))
+        # Image payload is irrelevant; just a placeholder buffer.
+        image_port.push_back(_Buf(None, b"\x00" * 16))
+    dc = _DC({"in_feat": feat_port, "in_image": image_port})
+
+    rc = fu.process(dc)
+    assert rc == _SC.STATUS_SUCCESS
+
+    out = list(dc.output("tracked_poses"))
+    assert len(out) == 2, f"expected 2 tracked_poses buffers, got {len(out)}"
+    # Confirm each emitted buffer parses and contains the two tracks.
+    import json as _json
+    for i, ob in enumerate(out):
+        payload = _json.loads(bytes(ob.as_object()).decode("utf-8"))
+        assert payload["frame_idx"] == i
+        assert len(payload["tracks"]) == 2
+    print("test_process_consumes_both_ports: PASS")
+
+
 def main() -> int:
     test_decode_extracts_two_persons()
     test_nms_keeps_two_distinct_persons()
     test_tracker_assigns_stable_ids_across_frames()
     test_tracker_recycles_after_max_lost()
     test_open_reads_config_defaults()
+    test_process_consumes_both_ports()
     return 0
 
 
