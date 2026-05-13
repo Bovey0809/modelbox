@@ -1,0 +1,28 @@
+#
+# Copyright 2026 The Modelbox Project Authors. All Rights Reserved.
+#
+[base]
+name = "hit_centers_emitter"
+device = "cpu"
+version = "1.0.0"
+description = "Collapse per-window hit-sound logits into a single list of (frame_idx, audio_conf) hit centers for the session."
+entry = "hit_centers_emitter@HitCentersEmitter"
+type = "python"
+
+collapse = true
+
+[config]
+video_fps = 30.0
+step_sec = 0.02
+window_sec = 0.5
+threshold = 0.5
+smooth_win = 5
+max_hit_dur = 1.0
+
+[input]
+[input.input1]
+name = "logits"
+
+[output]
+[output.output1]
+name = "hit_centers"
