@@ -1,7 +1,8 @@
 [driver]
 dir = [
     "@DEMO_TENNIS_ACTION_FLOWUNIT_DIR@",
-    "@DEMO_HIT_SOUND_FLOWUNIT_DIR@"
+    "@DEMO_HIT_SOUND_FLOWUNIT_DIR@",
+    "@DEMO_APPLE_SILICON_YOLO_FLOWUNIT_DIR@"
 ]
 [flow]
 name = "TennisAction"

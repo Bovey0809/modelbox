@@ -77,6 +77,10 @@ def render_overlay(source_video: str, output_path: str,
     """Re-open the source video, draw skeleton/ball/action labels onto each
     frame, write the result via cv2. Returns True on success, False on
     failure (caller decides whether to fall back / log)."""
+    # NOTE: encoder/overlay_encoder is currently advisory only — cv2.VideoWriter
+    # uses fourcc not named encoders. For real h264_nvenc output, this function
+    # would need to be rewritten to pipe frames to ffmpeg via subprocess.
+    # Documented as a v2 concern in docs/superpowers/specs/...-design.md §7.
     if not _HAS_CV2:
         modelbox.error("action_sink: cv2 not available; skipping overlay")
         return False
@@ -87,12 +91,25 @@ def render_overlay(source_video: str, output_path: str,
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
     w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    fourcc_map = {"libx264": "avc1", "h264_nvenc": "avc1",
+                  "mp4v": "mp4v", "libx265": "hev1"}
+    fourcc_str = fourcc_map.get(encoder, "mp4v")
+    fourcc = cv2.VideoWriter_fourcc(*fourcc_str)
     writer = cv2.VideoWriter(output_path, fourcc, fps, (w, h))
     if not writer.isOpened():
-        cap.release()
-        modelbox.error(f"action_sink: cannot open writer for {output_path}")
-        return False
+        # Preferred codec unavailable; fall back to mp4v (always present in
+        # OpenCV builds with FFmpeg). This mirrors the pre-v2 behaviour and
+        # keeps CI green on machines without libopenh264 / nvenc.
+        if fourcc_str != "mp4v":
+            modelbox.info(
+                f"action_sink: {fourcc_str} unavailable, retrying with mp4v")
+            fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+            writer = cv2.VideoWriter(output_path, fourcc, fps, (w, h))
+        if not writer.isOpened():
+            cap.release()
+            modelbox.error(
+                f"action_sink: cannot open writer for {output_path}")
+            return False
     # Per-frame label map.
     label_map: dict[int, str] = {}
     for hit in confirmed:

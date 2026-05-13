@@ -28,6 +28,18 @@ else()
         "real model in.")
 endif()
 
+set(ASFORMER_META_SRC "${CMAKE_SOURCE_DIR}/assets/tennis_action/asformer_meta.json")
+if(EXISTS ${ASFORMER_META_SRC})
+    install(FILES ${ASFORMER_META_SRC}
+        DESTINATION ${DEMO_TENNIS_ACTION_ASSETS_DIR}
+        COMPONENT demo)
+else()
+    message(WARNING
+        "${FLOWUNIT_NAME}: ${ASFORMER_META_SRC} missing; hit_fuse will fail "
+        "at open() time. Generate via scripts/build_tennis_action_stub_onnx.py "
+        "or drop a real meta.json in.")
+endif()
+
 install(DIRECTORY ${FLOWUNIT_PATH}
     DESTINATION ${DEMO_TENNIS_ACTION_FLOWUNIT_DIR}
     COMPONENT demo
