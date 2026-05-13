@@ -117,6 +117,7 @@ class TracknetBallEmitter(modelbox.FlowUnit):
         return modelbox.Status()
 
     def data_pre(self, data_context):
+        self.frame_idx = 0
         return modelbox.Status()
 
     def data_post(self, data_context):

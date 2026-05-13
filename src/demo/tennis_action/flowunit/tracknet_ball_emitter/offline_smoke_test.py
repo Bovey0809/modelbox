@@ -23,6 +23,38 @@ _FU.info = lambda msg: None
 _FU.error = lambda msg: print(f"[ERR] {msg}", file=sys.stderr)
 sys.modules["_flowunit"] = _FU
 
+# Upgraded stub: real-enough Buffer + DataContext for process() drive-through.
+class _Buf:
+    def __init__(self, dev, payload):
+        self._payload = payload
+        self._meta: dict = {}
+    def as_object(self):
+        return self._payload
+    def set(self, k, v):
+        self._meta[k] = v
+    def meta(self, k):
+        return self._meta.get(k)
+_FU.Buffer = _Buf
+
+class _Port:
+    def __init__(self):
+        self._items: list = []
+    def push_back(self, b):
+        self._items.append(b)
+    def __iter__(self):
+        return iter(self._items)
+
+class _DC:
+    def __init__(self, inputs: dict):
+        self._inputs = inputs  # {name: _Port-with-prepopulated-buffers}
+        self._outputs: dict = {}
+    def input(self, name):
+        return self._inputs[name]
+    def output(self, name):
+        if name not in self._outputs:
+            self._outputs[name] = _Port()
+        return self._outputs[name]
+
 sys.path.insert(0, str(Path(__file__).parent))
 from tracknet_ball_emitter import TracknetBallEmitter, extract_centroid  # noqa: E402
 
@@ -49,16 +81,15 @@ def test_below_threshold_returns_sentinel():
     print("test_below_threshold_returns_sentinel: PASS")
 
 
-def test_scaling_to_source_coords():
-    """Peak at net center → source center (configured via source_width/height)."""
+def test_extract_centroid_returns_net_coords():
+    """Peak at net center → cx, cy are at net center (no scaling here)."""
     heat = np.zeros((3, 288, 512), dtype=np.float32)
     heat[1, 144, 256] = 0.9  # net-resolution center
     cx, cy, peak = extract_centroid(heat, score_thr=0.3, mask_ratio=0.5,
                                     net_h=288, net_w=512)
-    sx = cx * (1280 / 512)
-    sy = cy * (720 / 288)
-    assert abs(sx - 640) < 2.0 and abs(sy - 360) < 2.0, f"({sx},{sy})"
-    print("test_scaling_to_source_coords: PASS")
+    assert peak >= 0.89
+    assert abs(cx - 256) < 1.0 and abs(cy - 144) < 1.0, f"({cx},{cy})"
+    print("test_extract_centroid_returns_net_coords: PASS")
 
 
 def test_flowunit_open_reads_config():
@@ -76,11 +107,46 @@ def test_flowunit_open_reads_config():
     print("test_flowunit_open_reads_config: PASS")
 
 
+def test_process_scales_to_source_coords():
+    """Drive TracknetBallEmitter.process(): net center peak -> scaled source-frame coords."""
+    heat = np.zeros((3, 288, 512), dtype=np.float32)
+    heat[1, 144, 256] = 0.9
+
+    fu = TracknetBallEmitter()
+    class _Cfg:
+        def __init__(self, d): self.d = d
+        def get_int(self, k, default): return int(self.d.get(k, default))
+        def get_float(self, k, default): return float(self.d.get(k, default))
+        def get_string(self, k, default): return str(self.d.get(k, default))
+    fu.open(_Cfg({"source_width": 1280, "source_height": 720,
+                  "score_thr": 0.3, "mask_ratio": 0.5,
+                  "net_h": 288, "net_w": 512}))
+
+    in_port = _Port()
+    in_port.push_back(_Buf(None, heat.astype(np.float32).tobytes()))
+    dc = _DC({"heatmaps": in_port})
+    rc = fu.process(dc)
+    assert rc == _SC.STATUS_SUCCESS, f"rc={rc}"
+
+    out_port = dc.output("ball_pos")
+    bufs = list(out_port)
+    assert len(bufs) == 1, f"expected 1 output buffer, got {len(bufs)}"
+    arr = np.frombuffer(bufs[0].as_object(), dtype=np.float32)
+    cx, cy, peak, fi = float(arr[0]), float(arr[1]), float(arr[2]), int(arr[3])
+    # Net (256, 144) scaled by (1280/512, 720/288) -> (640, 360).
+    assert abs(cx - 640) < 2.0, f"cx={cx} (expected ~640)"
+    assert abs(cy - 360) < 2.0, f"cy={cy} (expected ~360)"
+    assert peak >= 0.89
+    assert fi == 0
+    print("test_process_scales_to_source_coords: PASS")
+
+
 def main() -> int:
     test_centroid_above_threshold()
     test_below_threshold_returns_sentinel()
-    test_scaling_to_source_coords()
+    test_extract_centroid_returns_net_coords()     # renamed
     test_flowunit_open_reads_config()
+    test_process_scales_to_source_coords()         # new
     return 0
 
 
