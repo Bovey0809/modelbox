@@ -15,7 +15,6 @@ collapse = true
 video_fps = 30.0
 step_sec = 0.02
 window_sec = 0.5
-threshold = 0.5
 smooth_win = 5
 max_hit_dur = 1.0
 

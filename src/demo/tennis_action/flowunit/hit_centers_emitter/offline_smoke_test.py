@@ -81,7 +81,7 @@ def test_intervals_to_centers_two_clusters():
         logits[idx] = [0.0, 1.0]
     centers = intervals_to_centers(
         logits, video_fps=30.0, step_sec=0.02, window_sec=0.5,
-        threshold=0.5, smooth_win=5, max_hit_dur=1.0
+        smooth_win=5, max_hit_dur=1.0
     )
     assert len(centers) == 2, f"got {len(centers)} centers: {centers}"
     f0 = centers[0]["frame_idx"]
@@ -99,10 +99,10 @@ def test_fps_swap_shifts_frame_idx():
     for idx in range(48, 53):
         logits[idx] = [0.0, 1.0]
     c25 = intervals_to_centers(logits, video_fps=25.0, step_sec=0.02,
-                               window_sec=0.5, threshold=0.5,
+                               window_sec=0.5,
                                smooth_win=5, max_hit_dur=1.0)
     c30 = intervals_to_centers(logits, video_fps=30.0, step_sec=0.02,
-                               window_sec=0.5, threshold=0.5,
+                               window_sec=0.5,
                                smooth_win=5, max_hit_dur=1.0)
     assert len(c25) == 1 and len(c30) == 1
     assert c30[0]["frame_idx"] > c25[0]["frame_idx"], \
@@ -174,12 +174,42 @@ def test_data_pre_resets_accumulator():
     print("test_data_pre_resets_accumulator: PASS")
 
 
+def test_long_run_dropped_by_max_hit_dur():
+    """Run longer than max_hit_dur=1.0s (51 windows × 0.02s = 1.02s of
+    run-start span) is dropped; a 49-window run is kept."""
+    logits = np.zeros((200, 2), dtype=np.float32)
+    logits[:, 0] = 1.0
+
+    # 52-window run (indices 20..71): run_start=20, run_end=71,
+    # span = (71-20)*0.02 = 1.02s > max_hit_dur=1.0 → should be dropped.
+    for idx in range(20, 72):
+        logits[idx] = [0.0, 1.0]
+    centers = intervals_to_centers(
+        logits, video_fps=30.0, step_sec=0.02, window_sec=0.5,
+        smooth_win=5, max_hit_dur=1.0
+    )
+    assert len(centers) == 0, f"52-window run should be dropped, got {centers}"
+
+    # Reset and try 49 windows: indices 20..68 inclusive → 49 windows, span = 48*0.02 = 0.96s.
+    logits[:] = 0.0
+    logits[:, 0] = 1.0
+    for idx in range(20, 69):
+        logits[idx] = [0.0, 1.0]
+    centers = intervals_to_centers(
+        logits, video_fps=30.0, step_sec=0.02, window_sec=0.5,
+        smooth_win=5, max_hit_dur=1.0
+    )
+    assert len(centers) == 1, f"49-window run should be kept, got {centers}"
+    print("test_long_run_dropped_by_max_hit_dur: PASS")
+
+
 def main() -> int:
     test_smooth_majority_filters_isolated_spikes()
     test_intervals_to_centers_two_clusters()
     test_fps_swap_shifts_frame_idx()
     test_process_then_data_post_emits_one_buffer()
     test_data_pre_resets_accumulator()
+    test_long_run_dropped_by_max_hit_dur()
     return 0
 
 
