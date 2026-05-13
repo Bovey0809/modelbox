@@ -27,7 +27,10 @@ from onnx import TensorProto, helper, numpy_helper
 
 def _build_constant_onnx(name: str, in_shape: list[int], out_shape: list[int],
                          constant_value: float, out_path: Path) -> None:
-    # input -> Identity (ignored) -> ConstantOfShape -> output
+    # The graph reads `out_shape` from the initializer below and emits a
+    # constant tensor of that shape. `input` is declared but unused at
+    # runtime — ORT will see it in the signature so the inference flowunit
+    # binds it correctly, but it doesn't influence the output.
     inp = helper.make_tensor_value_info("input", TensorProto.FLOAT, in_shape)
     out = helper.make_tensor_value_info("output", TensorProto.FLOAT, out_shape)
 
@@ -38,14 +41,12 @@ def _build_constant_onnx(name: str, in_shape: list[int], out_shape: list[int],
         name="value", data_type=TensorProto.FLOAT, dims=[1], vals=[constant_value]
     )
 
-    # Use the input via Identity -> _ignored just so the graph isn't disconnected.
-    node_id = helper.make_node("Identity", ["input"], ["_ignored"])
     node_const = helper.make_node(
         "ConstantOfShape", ["out_shape"], ["output"], value=value_attr
     )
 
     graph = helper.make_graph(
-        nodes=[node_id, node_const],
+        nodes=[node_const],
         name=name,
         inputs=[inp],
         outputs=[out],
