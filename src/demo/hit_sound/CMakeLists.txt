@@ -12,8 +12,8 @@ cmake_minimum_required(VERSION 3.10)
 subdirlist(SUBDIRS ${CMAKE_CURRENT_SOURCE_DIR} "CMakeLists.txt")
 
 set(DEMO_HIT_SOUND_DIR "${MODELBOX_DEMO_INSTALL_DIR}/hit_sound" CACHE INTERNAL "")
-set(DEMO_HIT_SOUND_FLOWUNIT_DIR ${DEMO_HIT_SOUND_DIR}/flowunit)
-set(DEMO_HIT_SOUND_GRAPH_DIR ${DEMO_HIT_SOUND_DIR}/graph)
+set(DEMO_HIT_SOUND_FLOWUNIT_DIR "${DEMO_HIT_SOUND_DIR}/flowunit" CACHE INTERNAL "")
+set(DEMO_HIT_SOUND_GRAPH_DIR "${DEMO_HIT_SOUND_DIR}/graph" CACHE INTERNAL "")
 
 foreach(subdir ${SUBDIRS})
     add_subdirectory(${subdir})

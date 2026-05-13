@@ -1,0 +1,83 @@
+[driver]
+dir = [
+    "@DEMO_TENNIS_ACTION_FLOWUNIT_DIR@",
+    "@DEMO_HIT_SOUND_FLOWUNIT_DIR@"
+]
+[flow]
+name = "TennisAction"
+desc = "Offline tennis hit-sound + TrackNet + pose + ASFormer pipeline on CUDA."
+[graph]
+format = "graphviz"
+graphconf = '''digraph tennis_action_cuda {
+    node [shape=Mrecord]
+
+    video_input        [type=flowunit, flowunit=video_input,        device=cpu,  deviceid=0,
+                        source_url="@DEMO_TENNIS_ACTION_VIDEO@"]
+    hit_trigger        [type=flowunit, flowunit=hit_trigger,        device=cpu,  deviceid=0]
+    videodemuxer       [type=flowunit, flowunit=video_demuxer,      device=cpu,  deviceid=0]
+    videodecoder       [type=flowunit, flowunit=video_decoder,      device=cuda, deviceid=0, pix_fmt=bgr]
+
+    hit_window_emitter [type=flowunit, flowunit=hit_window_emitter, device=cpu,  deviceid=0,
+                        video_path="@DEMO_TENNIS_ACTION_VIDEO@"]
+    hit_sound_infer    [type=flowunit, flowunit=hit_sound_infer_ort, device=cpu, deviceid=0, batch_size=1]
+    hit_centers_emit   [type=flowunit, flowunit=hit_centers_emitter, device=cpu, deviceid=0, video_fps=30.0]
+
+    resize_tn          [type=flowunit, flowunit=resize,             device=cuda, deviceid=0,
+                        image_width=512, image_height=288]
+    normalize_tn       [type=flowunit, flowunit=normalize,          device=cuda, deviceid=0,
+                        standard_deviation_inverse="0.00392157,0.00392157,0.00392157"]
+    stacker            [type=flowunit, flowunit=tracknet_frame_stacker, device=cpu, deviceid=0]
+    tracknet_infer     [type=flowunit, flowunit=tracknet_deep,      device=cuda, deviceid=0, batch_size=1]
+    tracknet_ball      [type=flowunit, flowunit=tracknet_ball_emitter, device=cpu, deviceid=0,
+                        score_thr=0.3, source_width=1280, source_height=720]
+
+    resize_pose        [type=flowunit, flowunit=resize,             device=cuda, deviceid=0,
+                        image_width=640, image_height=640]
+    pose_detect        [type=flowunit, flowunit=yolo_pose_detect,   device=cuda, deviceid=0, batch_size=1]
+    pose_track_post    [type=flowunit, flowunit=yolo_pose_track_post, device=cpu, deviceid=0,
+                        conf_threshold=0.30, kpt_threshold=0.4, emit_overlay=false,
+                        source_width=1280, source_height=720]
+
+    hit_fuse           [type=flowunit, flowunit=hit_fuse,           device=cpu,  deviceid=0,
+                        T=32, require_visual_confirm=true, min_window_coverage=0.75,
+                        image_width=1280, image_height=720,
+                        asformer_meta_path="@DEMO_TENNIS_ACTION_ASSETS_DIR@/asformer_meta.json"]
+    asformer_infer     [type=flowunit, flowunit=asformer_infer_ort, device=cpu,  deviceid=0, batch_size=1]
+    action_sink        [type=flowunit, flowunit=action_sink,        device=cpu,  deviceid=0,
+                        output_json="/tmp/tennis_actions.json",
+                        output_overlay="/tmp/tennis_actions_overlay.mp4",
+                        output_dropped="/tmp/tennis_actions_dropped.json",
+                        class_names_path="@DEMO_TENNIS_ACTION_ASSETS_DIR@/asformer_meta.json",
+                        overlay_encoder=h264_nvenc, overlay_fallback_encoder=libx264,
+                        hit_label_persist_frames=30,
+                        source_video="@DEMO_TENNIS_ACTION_VIDEO@"]
+
+    hit_trigger:out                 -> hit_window_emitter:in_data
+    hit_window_emitter:mel          -> hit_sound_infer:input
+    hit_sound_infer:logits          -> hit_centers_emit:logits
+
+    video_input:out_video_url       -> videodemuxer:in_video_url
+    videodemuxer:out_video_packet   -> videodecoder:in_video_packet
+
+    videodecoder:out_video_frame    -> resize_tn:in_image
+    resize_tn:out_image             -> normalize_tn:in_data
+    normalize_tn:out_data           -> stacker:frame
+    stacker:stacked                 -> tracknet_infer:frames
+    tracknet_infer:heatmaps         -> tracknet_ball:heatmaps
+
+    videodecoder:out_video_frame    -> resize_pose:in_image
+    resize_pose:out_image           -> pose_detect:input
+    pose_detect:output              -> pose_track_post:in_feat
+    videodecoder:out_video_frame    -> pose_track_post:in_image
+
+    hit_centers_emit:hit_centers    -> hit_fuse:hit_centers
+    tracknet_ball:ball_pos          -> hit_fuse:ball_pos
+    pose_track_post:tracked_poses   -> hit_fuse:tracked_poses
+
+    hit_fuse:hit_window             -> asformer_infer:input
+    asformer_infer:logits           -> action_sink:logits
+    hit_fuse:hit_meta               -> action_sink:hit_meta
+    hit_fuse:dropped_hits           -> action_sink:dropped_hits
+    tracknet_ball:ball_pos          -> action_sink:ball_pos
+    pose_track_post:tracked_poses   -> action_sink:tracked_poses
+}'''
