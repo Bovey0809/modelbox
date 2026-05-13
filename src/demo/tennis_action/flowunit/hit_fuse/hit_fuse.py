@@ -15,6 +15,7 @@ Built incrementally:
 
 from __future__ import annotations
 
+import builtins
 import json
 from typing import Any
 
@@ -230,18 +231,133 @@ def assemble_window(pose_map: dict[int, list[dict[str, Any]]],
 class HitFuse(modelbox.FlowUnit):
     def __init__(self):
         super().__init__()
+        self._ball: dict[int, tuple[float, float, float]] = {}
+        self._poses: dict[int, list[dict[str, Any]]] = {}
+        self._centers_raw: list[dict[str, Any]] | None = None
 
     def open(self, config):
-        raise NotImplementedError("Filled in Task 6d")
-
-    def process(self, data_context):
+        self.T = config.get_int("T", 32)
+        # require_visual_confirm + min_window_coverage are stored as floats
+        # for forward-compat (get_float on a bool key would still work via
+        # _Cfg in tests but the real Config exposes get_bool).
+        if hasattr(config, "get_bool"):
+            self.require_visual_confirm = bool(
+                config.get_bool("require_visual_confirm", True))
+        else:
+            self.require_visual_confirm = True
+        self.min_window_coverage = config.get_float("min_window_coverage", 0.75)
+        self.image_width = config.get_int("image_width", 1280)
+        self.image_height = config.get_int("image_height", 720)
+        meta_path = config.get_string("asformer_meta_path", "")
+        if not meta_path:
+            modelbox.error("hit_fuse: asformer_meta_path required")
+            return modelbox.Status.StatusCode.STATUS_FAULT
+        try:
+            with builtins.open(meta_path) as f:
+                meta = json.load(f)
+        except OSError as exc:
+            modelbox.error(f"hit_fuse: cannot read asformer_meta_path: {exc}")
+            return modelbox.Status.StatusCode.STATUS_FAULT
+        if int(meta.get("T", -1)) != self.T:
+            modelbox.error(
+                f"hit_fuse: meta T={meta.get('T')} != configured T={self.T}")
+            return modelbox.Status.StatusCode.STATUS_FAULT
+        if int(meta.get("num_kpts", -1)) != 17:
+            modelbox.error("hit_fuse: meta num_kpts must be 17")
+            return modelbox.Status.StatusCode.STATUS_FAULT
+        self._ball = {}
+        self._poses = {}
+        self._centers_raw = None
         return modelbox.Status.StatusCode.STATUS_SUCCESS
 
     def data_pre(self, data_context):
+        # Reset per-stream state so multi-stream sessions don't carry over.
+        self._ball = {}
+        self._poses = {}
+        self._centers_raw = None
         return modelbox.Status()
 
+    def process(self, data_context):
+        for buf in data_context.input("ball_pos"):
+            arr = np.frombuffer(buf.as_object(), dtype=np.float32)
+            if arr.size < 4:
+                modelbox.error(
+                    f"hit_fuse: ball_pos buffer too small ({arr.size} floats)")
+                return modelbox.Status.StatusCode.STATUS_FAULT
+            cx = float(arr[0]); cy = float(arr[1])
+            peak = float(arr[2]); fi = int(arr[3])
+            self._ball[fi] = (cx, cy, peak)
+        for buf in data_context.input("tracked_poses"):
+            payload = json.loads(bytes(buf.as_object()).decode("utf-8"))
+            self._poses[int(payload["frame_idx"])] = payload["tracks"]
+        for buf in data_context.input("hit_centers"):
+            self._centers_raw = json.loads(bytes(buf.as_object()).decode("utf-8"))
+        return modelbox.Status.StatusCode.STATUS_SUCCESS
+
     def data_post(self, data_context):
+        if self._centers_raw is None:
+            self._centers_raw = []
+        confirmed, dropped = self.fuse_session(self._centers_raw, self._ball,
+                                               self._poses)
+        win_out = data_context.output("hit_window")
+        meta_out = data_context.output("hit_meta")
+        for hit_id, (arr, meta) in enumerate(confirmed):
+            wb = modelbox.Buffer(self.get_bind_device(),
+                                 arr.astype(np.float32).tobytes())
+            wb.set("hit_id", int(hit_id))
+            win_out.push_back(wb)
+            meta["hit_id"] = int(hit_id)
+            mb = modelbox.Buffer(self.get_bind_device(),
+                                 json.dumps(meta).encode("utf-8"))
+            mb.set("hit_id", int(hit_id))
+            meta_out.push_back(mb)
+        drop_out = data_context.output("dropped_hits")
+        db = modelbox.Buffer(self.get_bind_device(),
+                             json.dumps(dropped).encode("utf-8"))
+        drop_out.push_back(db)
         return modelbox.Status()
 
     def close(self):
         return modelbox.Status()
+
+    def fuse_session(self, centers_raw, ball_map, pose_map):
+        """Pure-function entry point used by tests and by data_post()."""
+        confirmed: list[tuple[np.ndarray, dict[str, Any]]] = []
+        dropped: list[dict[str, Any]] = []
+        for entry in centers_raw:
+            f = int(entry["frame_idx"])
+            audio_conf = float(entry["audio_conf"])
+            ok, reason = cross_confirm(ball_map, f, self.require_visual_confirm)
+            if not ok:
+                dropped.append({"audio_hit_frame_idx": f,
+                                "audio_conf": audio_conf, "reason": reason})
+                continue
+            ball = ball_map.get(f, (-1.0, -1.0, 0.0))
+            assign = assign_hitter(pose_map, ball, f)
+            if assign is None:
+                dropped.append({"audio_hit_frame_idx": f,
+                                "audio_conf": audio_conf,
+                                "reason": "no_player_at_hit"})
+                continue
+            window = assemble_window(pose_map, assign["track_id"], f, self.T,
+                                     self.min_window_coverage,
+                                     self.image_width, self.image_height)
+            if window is None:
+                dropped.append({"audio_hit_frame_idx": f,
+                                "audio_conf": audio_conf,
+                                "reason": "window_coverage_low"})
+                continue
+            arr, wmeta = window
+            visual_agrees = reason != "visual_skipped"
+            meta = {
+                "frame_idx": f, "track_id": int(assign["track_id"]),
+                "audio_conf": audio_conf,
+                "fused_conf": (audio_conf + 1.0) / 2.0 if visual_agrees
+                              else audio_conf,
+                "ball_xy": [float(ball[0]), float(ball[1])],
+                "tie_resolved": bool(assign["tie_resolved"]),
+                "boundary_padded": bool(wmeta["boundary_padded"]),
+                "visual_agrees": visual_agrees,
+            }
+            confirmed.append((arr, meta))
+        return confirmed, dropped

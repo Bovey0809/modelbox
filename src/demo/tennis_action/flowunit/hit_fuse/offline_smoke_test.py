@@ -230,6 +230,82 @@ def test_assemble_window_boundary_padding():
     print("test_assemble_window_boundary_padding: PASS")
 
 
+# --- End-to-end Python class integration (Task 6d) ---
+
+def _write_stub_meta(path: Path, T: int = 32):
+    path.write_text(json.dumps({
+        "classes": ["forehand", "backhand", "serve", "other"],
+        "num_kpts": 17, "T": T, "input_layout": "BTC",
+    }))
+
+
+def test_hit_fuse_open_validates_meta():
+    """open() must reject mismatched T or wrong num_kpts in asformer_meta.json."""
+    class _Cfg:
+        def __init__(self, d): self.d = d
+        def get_int(self, k, dflt): return int(self.d.get(k, dflt))
+        def get_float(self, k, dflt): return float(self.d.get(k, dflt))
+        def get_string(self, k, dflt): return str(self.d.get(k, dflt))
+        def get_bool(self, k, dflt): return bool(self.d.get(k, dflt))
+    with tempfile.TemporaryDirectory() as td:
+        meta = Path(td) / "asformer_meta.json"
+        _write_stub_meta(meta, T=32)
+        fu = HitFuse()
+        rc = fu.open(_Cfg({"T": 32, "asformer_meta_path": str(meta)}))
+        assert rc == _SC.STATUS_SUCCESS, f"rc={rc}"
+        # Mismatched T should fault.
+        _write_stub_meta(meta, T=16)
+        fu2 = HitFuse()
+        rc2 = fu2.open(_Cfg({"T": 32, "asformer_meta_path": str(meta)}))
+        assert rc2 == _SC.STATUS_FAULT, f"expected FAULT, got rc={rc2}"
+        print("test_hit_fuse_open_validates_meta: PASS")
+
+
+def test_hit_fuse_end_to_end_one_hit():
+    """Drive fuse_session() with a clean direction-flip + one track present
+    for the full window. Expect exactly one confirmed hit."""
+    # Ball trajectory: moving away from x=200 in both directions of frame 40.
+    # Build a clear V-shape: x decreasing 50->40, then increasing 40->50.
+    ball_map = {}
+    for f in range(0, 80):
+        if 35 <= f <= 45:
+            if f <= 40:
+                x = 250.0 - 10.0 * (f - 35)  # 250, 240, ..., 200
+            else:
+                x = 200.0 + 10.0 * (f - 40)  # 210, 220, ..., 250
+            ball_map[f] = (x, 200.0, 0.9)
+        else:
+            ball_map[f] = (-1.0, -1.0, 0.0)
+    # One track present across frames 20..60 with wrist near (200, 200).
+    pose_map = {f: [_ts(7, 200, 200)] for f in range(20, 60)}
+    centers = [{"frame_idx": 40, "audio_conf": 0.9, "t_center_sec": 1.33}]
+
+    with tempfile.TemporaryDirectory() as td:
+        meta = Path(td) / "asformer_meta.json"
+        _write_stub_meta(meta, T=32)
+        fu = HitFuse()
+
+        class _Cfg:
+            def __init__(self, d): self.d = d
+            def get_int(self, k, dflt): return int(self.d.get(k, dflt))
+            def get_float(self, k, dflt): return float(self.d.get(k, dflt))
+            def get_string(self, k, dflt): return str(self.d.get(k, dflt))
+            def get_bool(self, k, dflt): return bool(self.d.get(k, dflt))
+
+        fu.open(_Cfg({"T": 32, "image_width": 1280, "image_height": 720,
+                      "require_visual_confirm": True,
+                      "min_window_coverage": 0.75,
+                      "asformer_meta_path": str(meta)}))
+        confirmed, dropped = fu.fuse_session(centers, ball_map, pose_map)
+    assert len(confirmed) == 1, f"got {len(confirmed)} confirmed, {len(dropped)} dropped"
+    arr, meta_h = confirmed[0]
+    assert arr.shape == (32, 17, 3)
+    assert meta_h["track_id"] == 7
+    assert meta_h["frame_idx"] == 40
+    assert meta_h["audio_conf"] == 0.9
+    print("test_hit_fuse_end_to_end_one_hit: PASS")
+
+
 def main() -> int:
     test_cross_confirm_direction_flip_accepts()
     test_cross_confirm_no_flip_rejects()
@@ -243,6 +319,8 @@ def main() -> int:
     test_assemble_window_interpolates_gaps()
     test_assemble_window_coverage_too_low_drops()
     test_assemble_window_boundary_padding()
+    test_hit_fuse_open_validates_meta()
+    test_hit_fuse_end_to_end_one_hit()
     # More tests appended in tasks 6b–6d.
     return 0
 

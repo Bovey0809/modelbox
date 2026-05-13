@@ -1,0 +1,37 @@
+#
+# Copyright 2026 The Modelbox Project Authors. All Rights Reserved.
+#
+[base]
+name = "hit_fuse"
+device = "cpu"
+version = "1.0.0"
+description = "Cross-confirm hit audio + ball trajectory; assign hitter; assemble T-frame keypoint window per confirmed hit."
+entry = "hit_fuse@HitFuse"
+type = "python"
+
+collapse = true
+expand = true
+
+[config]
+T = 32
+require_visual_confirm = true
+min_window_coverage = 0.75
+image_width = 1280
+image_height = 720
+asformer_meta_path = ""
+
+[input]
+[input.input1]
+name = "hit_centers"
+[input.input2]
+name = "ball_pos"
+[input.input3]
+name = "tracked_poses"
+
+[output]
+[output.output1]
+name = "hit_window"
+[output.output2]
+name = "hit_meta"
+[output.output3]
+name = "dropped_hits"
