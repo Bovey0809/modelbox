@@ -261,6 +261,75 @@ Under `assets/tennis_action/` (relative paths in TOMLs are resolved against the 
 
 CMake adds a configure-time check that **warns** if any of these are missing, but does not fail the build (code-only iteration must still work).
 
+### 6.1 Canonical weights on the pose server
+
+The trained checkpoints live on the pose server (AutoDL container, SSH alias `pose` in `~/.ssh/config`; target `connect.westd.seetacloud.com:35584`) under the `autodl-fs` network share. Latest known-good copies at the time of writing (2026-05-14):
+
+| Component | Path on `pose` | Size | Format | Notes |
+|---|---|---|---|---|
+| TrackNet (ball heatmap) | `/root/autodl-fs/repos/tracknet/exp_deep/TrackNet_best.pt` | 561 MB | PyTorch state-dict wrapped as `{"model": state_dict, "args": {...}}` | Architecture: `TrackNetDeep` (per `args.model == "tracknet_deep"`), `seq_len=3`, `bg_mode=""` (3-channel-per-frame input). Source: `/root/autodl-fs/repos/tracknet/model.py`. |
+| ASFormer (action) — PyTorch | `/root/autodl-fs/repos/action_recognition/data/checkpoints/best.pt` | 8.1 MB | PyTorch state-dict | Architecture knobs in `train_config.json` (same dir): `num_classes=19`, `num_stages=3`, `num_layers=5`, `num_f_maps=128`, `attn_every=2`, `attn_heads=4`, `engineer_features=true`. Source: `/root/autodl-fs/repos/action_recognition/models/asformer.py`. |
+| ASFormer — ONNX (structure only) | `/root/autodl-fs/repos/action_recognition/data/checkpoints/asformer.onnx` | 26 KB | ONNX with external data | The companion `.data` blob isn't co-located on disk; re-exporting from `best.pt` is more reliable than recovering it. |
+| ASFormer config | `/root/autodl-fs/repos/action_recognition/data/checkpoints/train_config.json` | <1 KB | JSON | Source-of-truth for the 19 class IDs (resolve via `models/asformer.py` constants or the parser scripts under `scripts/`). |
+| YOLO-pose (Ultralytics) | n/a on `autodl-fs` | — | — | Pose server pipeline (`pipeline_with_ball.py`) loads via `load_pose_model("yolo_pose")` from `modelS/yolo/modelloader.py`. For our ModelBox graph use the locally-available `/home/rick/yolo11n-pose.onnx` on the dev box (verified compatible signature) or export fresh from `yolo11n-pose.pt`. |
+| hit_sound classifier | `assets/hit_sound/best.onnx` in this repo | 164 KB | ONNX | Already in tree; no copy from pose server needed. |
+
+### 6.2 Reference end-to-end pipeline (non-ModelBox)
+
+A working PyTorch-native pipeline using the same weights already exists on the pose server. Use it as the ground-truth reference when validating the ModelBox port:
+
+- Orchestrator: `/root/autodl-tmp/modelS/models/action/pipeline_with_ball.py` (note: **not** `/root/autodl-fs/data/repos/modelS/...` — the older `run_all_tennis.sh` has stale paths).
+- Visualizer: `/root/autodl-fs/tmp_action_demo/visualize_fused.py`.
+- Sweep driver: `/root/autodl-fs/tmp_action_demo/run_all_tennis.sh` (paths inside need fixing per the note above).
+- Pre-computed reference output: `/root/autodl-fs/tmp_action_demo/clip_20s_predicted.mp4` + `clip_20s_actions.json`.
+
+Invocation that produced `/tmp/tennis_test_predicted_v2.mp4` on the dev box (2026-05-14):
+
+```bash
+ssh pose
+/root/miniconda3/bin/python /root/autodl-tmp/modelS/models/action/pipeline_with_ball.py \
+    /root/autodl-tmp/tennis_test.mp4 \
+    --output-dir /root/autodl-tmp/predict_out \
+    --stem tennis_test \
+    --action-model asformer_tennis \
+    --action-device cuda:0 \
+    --tracknet-ckpt /autodl-fs/data/repos/tracknet/exp_deep/TrackNet_best.pt
+/root/miniconda3/bin/python /root/autodl-fs/tmp_action_demo/visualize_fused.py \
+    /root/autodl-tmp/tennis_test.mp4 \
+    /root/autodl-tmp/predict_out/tennis_test_actions.json \
+    /root/autodl-tmp/predict_out/tennis_test_ball.npy \
+    /root/autodl-tmp/predict_out/tennis_test_predicted.mp4
+```
+
+### 6.3 ONNX export commands for the ModelBox pipeline
+
+When porting to the ModelBox graph, the two missing ONNXes are exported from the canonical PyTorch checkpoints:
+
+```bash
+# TrackNet → ONNX (run on the pose server; the .pt is 561 MB and torch on the
+# dev box can deserialize it but the architecture imports require model.py).
+python3 src/demo/tennis_action/scripts/export_tracknet_onnx.py \
+    --checkpoint /root/autodl-fs/repos/tracknet/exp_deep/TrackNet_best.pt \
+    --tracknet_repo /root/autodl-fs/repos/tracknet \
+    --output assets/tennis_action/tracknet_deep.onnx
+# Expected I/O: [1, 9, 288, 512] → [1, 3, 288, 512].
+
+# ASFormer → ONNX (no exporter script yet — to be added in Task 12; mirror the
+# pattern of export_tracknet_onnx.py, importing the model class from
+# /root/autodl-fs/repos/action_recognition/models/asformer.py).
+# Expected I/O: [1, T=32, 51] → [1, num_classes=19].
+```
+
+The resulting ONNX files are gitignored (`/assets/tennis_action/*.onnx`) and the build CMake `WARNING`s if they're absent.
+
+### 6.4 Class taxonomy (ASFormer, 19 classes)
+
+The repo currently scaffolds 4 classes (`forehand`, `backhand`, `serve`, `other`) in the stub `asformer_meta.json`. The real model has **19** classes — the canonical list lives in `/root/autodl-fs/repos/action_recognition/models/` (parser logic) and includes at minimum the seven visualized in `visualize_fused.py`:
+
+`serve`, `forehandGroundstroke`, `backhandGroundstroke`, `forehandVolley`, `backhandVolley`, `overheadSmash`, `default`
+
+Task 12 (manual bring-up) must pin the full 19-class list into `assets/tennis_action/asformer_meta.json` so `hit_fuse.open()` and `action_sink` agree.
+
 ## 7. Error handling
 
 ### Per-hit drops (recorded in `tennis_actions_dropped.json`)
