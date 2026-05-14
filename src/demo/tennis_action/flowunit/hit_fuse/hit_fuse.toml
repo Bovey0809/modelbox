@@ -35,3 +35,5 @@ name = "hit_window"
 name = "hit_meta"
 [output.output3]
 name = "dropped_hits"
+[output.output4]
+name = "mask"

@@ -179,7 +179,7 @@ class ActionSink(modelbox.FlowUnit):
         self.source_video = config.get_string("source_video", "")
         if self.class_names_path and os.path.exists(self.class_names_path):
             try:
-                with open(self.class_names_path) as f:
+                with open(self.class_names_path, encoding="utf-8") as f:
                     self.classes = json.load(f).get("classes", [])
             except OSError as exc:
                 modelbox.error(

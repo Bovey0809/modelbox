@@ -253,7 +253,7 @@ class HitFuse(modelbox.FlowUnit):
             modelbox.error("hit_fuse: asformer_meta_path required")
             return modelbox.Status.StatusCode.STATUS_FAULT
         try:
-            with builtins.open(meta_path) as f:
+            with builtins.open(meta_path, encoding="utf-8") as f:
                 meta = json.load(f)
         except OSError as exc:
             modelbox.error(f"hit_fuse: cannot read asformer_meta_path: {exc}")
@@ -301,11 +301,17 @@ class HitFuse(modelbox.FlowUnit):
                                                self._poses)
         win_out = data_context.output("hit_window")
         meta_out = data_context.output("hit_meta")
+        mask_out = data_context.output("mask")
         for hit_id, (arr, meta) in enumerate(confirmed):
             wb = modelbox.Buffer(self.get_bind_device(),
                                  arr.astype(np.float32).tobytes())
             wb.set("hit_id", int(hit_id))
             win_out.push_back(wb)
+            # emit all-ones mask (T,) so asformer_infer_ort gets its second input
+            mask_arr = np.ones(self.T, dtype=np.float32)
+            mkb = modelbox.Buffer(self.get_bind_device(), mask_arr.tobytes())
+            mkb.set("hit_id", int(hit_id))
+            mask_out.push_back(mkb)
             meta["hit_id"] = int(hit_id)
             mb = modelbox.Buffer(self.get_bind_device(),
                                  json.dumps(meta).encode("utf-8"))

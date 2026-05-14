@@ -28,7 +28,7 @@ name = "logits"
 name = "hit_meta"
 [input.input3]
 name = "dropped_hits"
-[input.input4]
-name = "tracked_poses"
-[input.input5]
-name = "ball_pos"
+# tracked_poses + ball_pos removed: ModelBox can't reconcile per-frame
+# streams with per-hit expand at one sink. The session-end overlay
+# renderer uses hit_meta.ball_xy + hit_window kpts; for full per-frame
+# overlays, run a Python post-process script outside the graph.

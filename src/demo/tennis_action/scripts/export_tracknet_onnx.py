@@ -39,7 +39,7 @@ def main() -> int:
         return 1
 
     model = TrackNet()
-    sd = torch.load(args.checkpoint, map_location="cpu")
+    sd = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
     if isinstance(sd, dict) and "state_dict" in sd:
         sd = sd["state_dict"]
     model.load_state_dict(sd)

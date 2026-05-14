@@ -14,7 +14,6 @@ graphconf = '''digraph tennis_action_cuda {
 
     video_input        [type=flowunit, flowunit=video_input,        device=cpu,  deviceid=0,
                         source_url="@DEMO_TENNIS_ACTION_VIDEO@"]
-    hit_trigger        [type=flowunit, flowunit=hit_trigger,        device=cpu,  deviceid=0]
     videodemuxer       [type=flowunit, flowunit=video_demuxer,      device=cpu,  deviceid=0]
     videodecoder       [type=flowunit, flowunit=video_decoder,      device=cuda, deviceid=0, pix_fmt=bgr]
 
@@ -53,7 +52,12 @@ graphconf = '''digraph tennis_action_cuda {
                         hit_label_persist_frames=30,
                         source_video="@DEMO_TENNIS_ACTION_VIDEO@"]
 
-    hit_trigger:out                 -> hit_window_emitter:in_data
+    # Audio + video branches share video_input as LCA: the URL buffer is fanned
+    # out to both the demuxer (drives the video path) and hit_window_emitter
+    # (which ignores the buffer body and reads video_path from its own config —
+    # the URL is just the trigger). This satisfies ModelBox's LCA requirement
+    # for hit_fuse's multi-input collapse.
+    video_input:out_video_url       -> hit_window_emitter:in_data
     hit_window_emitter:mel          -> hit_sound_infer:input
     hit_sound_infer:logits          -> hit_centers_emit:logits
 
@@ -75,10 +79,14 @@ graphconf = '''digraph tennis_action_cuda {
     tracknet_ball:ball_pos          -> hit_fuse:ball_pos
     pose_track_post:tracked_poses   -> hit_fuse:tracked_poses
 
-    hit_fuse:hit_window             -> asformer_infer:input
+    hit_fuse:hit_window             -> asformer_infer:features
+    hit_fuse:mask                   -> asformer_infer:mask
     asformer_infer:logits           -> action_sink:logits
     hit_fuse:hit_meta               -> action_sink:hit_meta
     hit_fuse:dropped_hits           -> action_sink:dropped_hits
-    tracknet_ball:ball_pos          -> action_sink:ball_pos
-    pose_track_post:tracked_poses   -> action_sink:tracked_poses
+    # NB: per-frame ball_pos and tracked_poses are NOT wired to action_sink —
+    # ModelBox can't reconcile per-frame streams with per-hit expand at one
+    # sink node. Overlay rendering uses what's already in hit_meta (ball_xy
+    # at hit frames + per-track kpts via hit_window); for full per-frame
+    # overlays run a separate post-process script outside the graph.
 }'''

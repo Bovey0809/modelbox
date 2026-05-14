@@ -12,7 +12,11 @@ virtual_type = "onnxruntime"
 
 [input]
 [input.input1]
-name = "input"
+name = "features"
+type = "float"
+
+[input.input2]
+name = "mask"
 type = "float"
 
 [output]
