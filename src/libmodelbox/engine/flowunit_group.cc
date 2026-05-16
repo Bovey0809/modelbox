@@ -162,6 +162,19 @@ Status FlowUnitGroup::PostProcess(FUExecContextList &exec_ctx_list) {
       return ret_status;
     }
 
+    // After DataPost, run a second pass to merge any buffers the
+    // user emitted in DataPost into cur_output_, set their process_info,
+    // and re-do UpdateOutputIndexInfo.  Without this, data_post emits
+    // are silently dropped (they sit in cur_output_valid_data_ and get
+    // wiped by ClearData at end of Run).
+    if (data_ctx->IsDataPost()) {
+      status = data_ctx->MergeDataPostOutput();
+      if (status == STATUS_STOP || status == STATUS_SHUTDOWN) {
+        ret_status = status;
+        return ret_status;
+      }
+    }
+
     // make sure ctx state is right for next process
     data_ctx->UpdateProcessState();
 

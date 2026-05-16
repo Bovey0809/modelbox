@@ -229,6 +229,14 @@ class FlowUnitDataContext : public DataContext, public SessionStateListener {
    **/
   Status PostProcess();
 
+  /**
+   * @brief Second-pass merge for buffers emitted from user DataPost().
+   * Sets process_info on buffers pushed during data_post, merges them
+   * into cur_output_, and updates index_info.  Without this, data_post
+   * emits would be silently dropped (cleared by ClearData at end of Run).
+   **/
+  Status MergeDataPostOutput();
+
   std::shared_ptr<Session> GetSession();
 
   void NotifySessionClose() override;

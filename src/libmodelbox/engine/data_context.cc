@@ -20,6 +20,7 @@
 #include <modelbox/port.h>
 #include <modelbox/session_context.h>
 
+#include <unordered_set>
 #include <utility>
 
 namespace modelbox {
@@ -508,6 +509,99 @@ void FlowUnitDataContext::SetSkippable(bool skippable) {
 
 void FlowUnitDataContext::SetDataPreError(bool is_error) {
   is_datapre_error_ = is_error;
+}
+
+Status FlowUnitDataContext::MergeDataPostOutput() {
+  // PostProcess already ran (GenerateOutput merged any process()-emitted
+  // buffers into cur_output_, AppendEndFlag added end_flag if needed, and
+  // UpdateOutputIndexInfo set indices).  Then the user's DataPost() ran and
+  // may have pushed new buffers into cur_output_valid_data_.  Those new
+  // buffers are not yet in cur_output_.  Without merging them, they get
+  // wiped by ClearData() at the end of Node::Run and are silently lost.
+  bool has_any = false;
+  for (auto &port_item : cur_output_valid_data_) {
+    const auto &port_name = port_item.first;
+    auto &port_list = port_item.second;
+    if (port_list == nullptr) {
+      continue;
+    }
+
+    auto &out_list = cur_output_[port_name];
+    std::unordered_set<Buffer *> existing;
+    for (auto &b : out_list) {
+      if (b != nullptr) {
+        existing.insert(b.get());
+      }
+    }
+
+    for (size_t i = 0; i < port_list->Size(); ++i) {
+      auto buf = port_list->At(i);
+      if (buf == nullptr || existing.count(buf.get()) != 0) {
+        continue;
+      }
+      auto cur_buffer_index_info = BufferManageView::GetIndexInfo(buf);
+
+      if (cur_buffer_index_info->GetProcessInfo() == nullptr) {
+        auto process_info = std::make_shared<BufferProcessInfo>();
+        const PortDataMap *src = nullptr;
+        if (cur_input_ != nullptr && !cur_input_->empty()) {
+          src = cur_input_.get();
+        } else if (!cur_input_end_flag_.empty()) {
+          src = &cur_input_end_flag_;
+        }
+        if (src == nullptr) {
+          MBLOG_WARN << "node " << node_->GetName()
+                     << ", data_post emitted buffer on port " << port_name
+                     << " but no input context available to derive process_info";
+          continue;
+        }
+        for (auto &in_port_item : *src) {
+          std::list<std::shared_ptr<BufferIndexInfo>> ii_list;
+          for (auto &in_buf : in_port_item.second) {
+            if (in_buf == nullptr) continue;
+            ii_list.push_back(BufferManageView::GetIndexInfo(in_buf));
+          }
+          if (!ii_list.empty()) {
+            process_info->SetParentBuffers(in_port_item.first,
+                                           std::move(ii_list));
+          }
+        }
+        if (process_info->GetParentBuffers().empty()) {
+          MBLOG_WARN << "node " << node_->GetName()
+                     << ", data_post emitted buffer on port " << port_name
+                     << " but input context has no buffers";
+          continue;
+        }
+        cur_buffer_index_info->SetProcessInfo(process_info);
+      }
+
+      auto &parent_buffers =
+          cur_buffer_index_info->GetProcessInfo()->GetParentBuffers();
+      if (!parent_buffers.empty() && !parent_buffers.begin()->second.empty()) {
+        UpdateBufferIndexInfo(cur_buffer_index_info,
+                              parent_buffers.begin()->second.front());
+      }
+
+      auto insert_pos = out_list.end();
+      for (auto it = out_list.begin(); it != out_list.end(); ++it) {
+        if (*it != nullptr) {
+          auto ii2 = BufferManageView::GetIndexInfo(*it);
+          if (ii2->IsEndFlag()) {
+            insert_pos = it;
+            break;
+          }
+        }
+      }
+      out_list.insert(insert_pos, buf);
+      has_any = true;
+    }
+  }
+
+  if (!has_any) {
+    return STATUS_OK;
+  }
+
+  return CheckOutputData();
 }
 
 // after flowunit process
