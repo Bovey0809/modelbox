@@ -9,6 +9,8 @@ file(MAKE_DIRECTORY ${FLOWUNIT_PATH})
 
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/${FLOWUNIT_NAME}.toml
                ${FLOWUNIT_PATH}/${FLOWUNIT_NAME}.toml @ONLY)
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/tracknet_deep_cuda.toml
+               ${FLOWUNIT_PATH}/tracknet_deep_cuda.toml @ONLY)
 
 set(TRACKNET_ONNX_SRC "${CMAKE_SOURCE_DIR}/assets/tennis_action/tracknet_deep.onnx")
 set(TRACKNET_ONNX_DST "${FLOWUNIT_PATH}/tracknet_deep.onnx")

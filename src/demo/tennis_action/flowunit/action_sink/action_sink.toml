@@ -26,9 +26,6 @@ source_video = ""
 name = "logits"
 [input.input2]
 name = "hit_meta"
-[input.input3]
-name = "dropped_hits"
-# tracked_poses + ball_pos removed: ModelBox can't reconcile per-frame
-# streams with per-hit expand at one sink. The session-end overlay
-# renderer uses hit_meta.ball_xy + hit_window kpts; for full per-frame
-# overlays, run a Python post-process script outside the graph.
+# dropped_hits, ball, and pose per-frame data are all provided via the shared
+# _tennis_store side-channel (read in data_post()), not as direct port inputs,
+# to avoid ModelBox stream-cardinality constraints.

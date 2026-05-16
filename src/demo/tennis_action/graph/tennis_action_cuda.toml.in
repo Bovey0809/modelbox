@@ -33,10 +33,15 @@ graphconf = '''digraph tennis_action_cuda {
 
     resize_pose        [type=flowunit, flowunit=resize,             device=cuda, deviceid=0,
                         image_width=640, image_height=640]
+    normalize_pose     [type=flowunit, flowunit=normalize,          device=cuda, deviceid=0,
+                        standard_deviation_inverse="0.00392157,0.00392157,0.00392157"]
     pose_detect        [type=flowunit, flowunit=yolo_pose_detect,   device=cuda, deviceid=0, batch_size=1]
     pose_track_post    [type=flowunit, flowunit=yolo_pose_track_post, device=cpu, deviceid=0,
                         conf_threshold=0.30, kpt_threshold=0.4, emit_overlay=false,
                         source_width=1280, source_height=720]
+
+    ball_discard       [type=flowunit, flowunit=stream_discard,     device=cpu, deviceid=0]
+    poses_discard      [type=flowunit, flowunit=stream_discard,     device=cpu, deviceid=0]
 
     hit_fuse           [type=flowunit, flowunit=hit_fuse,           device=cpu,  deviceid=0,
                         T=32, require_visual_confirm=true, min_window_coverage=0.75,
@@ -71,22 +76,24 @@ graphconf = '''digraph tennis_action_cuda {
     tracknet_infer:heatmaps         -> tracknet_ball:heatmaps
 
     videodecoder:out_video_frame    -> resize_pose:in_image
-    resize_pose:out_image           -> pose_detect:input
+    resize_pose:out_image           -> normalize_pose:in_data
+    normalize_pose:out_data         -> pose_detect:input
     pose_detect:output              -> pose_track_post:in_feat
     videodecoder:out_video_frame    -> pose_track_post:in_image
 
+    # ball_pos and tracked_poses are routed to discard sinks rather than to
+    # hit_fuse directly: per-frame video streams cannot be matched with the
+    # collapsed hit_centers stream (1 buffer/session) at a multi-input node.
+    # The actual ball/pose data is provided to hit_fuse and action_sink via
+    # the _tennis_store side-channel (written in tracknet_ball_emitter and
+    # yolo_pose_track_post process(), read in data_post()).
+    tracknet_ball:ball_pos          -> ball_discard:in_data
+    pose_track_post:tracked_poses   -> poses_discard:in_data
+
     hit_centers_emit:hit_centers    -> hit_fuse:hit_centers
-    tracknet_ball:ball_pos          -> hit_fuse:ball_pos
-    pose_track_post:tracked_poses   -> hit_fuse:tracked_poses
 
     hit_fuse:hit_window             -> asformer_infer:features
     hit_fuse:mask                   -> asformer_infer:mask
     asformer_infer:logits           -> action_sink:logits
     hit_fuse:hit_meta               -> action_sink:hit_meta
-    hit_fuse:dropped_hits           -> action_sink:dropped_hits
-    # NB: per-frame ball_pos and tracked_poses are NOT wired to action_sink —
-    # ModelBox can't reconcile per-frame streams with per-hit expand at one
-    # sink node. Overlay rendering uses what's already in hit_meta (ball_xy
-    # at hit frames + per-track kpts via hit_window); for full per-frame
-    # overlays run a separate post-process script outside the graph.
 }'''

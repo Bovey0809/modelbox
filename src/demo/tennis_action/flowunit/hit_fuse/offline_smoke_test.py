@@ -306,6 +306,79 @@ def test_hit_fuse_end_to_end_one_hit():
     print("test_hit_fuse_end_to_end_one_hit: PASS")
 
 
+def test_hit_fuse_process_collapsed_json_inputs():
+    """process() must accept collapsed JSON buffers (new ball_history_collector /
+    poses_history_collector format) for ball_pos and tracked_poses."""
+    ball_payload = json.dumps({
+        "35": [250.0, 200.0, 0.9],
+        "36": [240.0, 200.0, 0.9],
+        "37": [230.0, 200.0, 0.9],
+        "38": [220.0, 200.0, 0.9],
+        "39": [210.0, 200.0, 0.9],
+        "40": [200.0, 200.0, 0.9],
+        "41": [210.0, 200.0, 0.9],
+        "42": [220.0, 200.0, 0.9],
+        "43": [230.0, 200.0, 0.9],
+        "44": [240.0, 200.0, 0.9],
+        "45": [250.0, 200.0, 0.9],
+    }).encode("utf-8")
+    kpts = [[200.0, 200.0, 0.9] for _ in range(17)]
+    tracks = [{"track_id": 7, "bbox": [150.0, 150.0, 250.0, 350.0],
+               "score": 0.9, "kpts": kpts}]
+    poses_payload = json.dumps(
+        {str(f): tracks for f in range(20, 60)}
+    ).encode("utf-8")
+    centers_payload = json.dumps(
+        [{"frame_idx": 40, "audio_conf": 0.9, "t_center_sec": 1.33}]
+    ).encode("utf-8")
+
+    with tempfile.TemporaryDirectory() as td:
+        meta = Path(td) / "asformer_meta.json"
+        _write_stub_meta(meta, T=32)
+
+        class _Cfg:
+            def __init__(self, d): self.d = d
+            def get_int(self, k, dflt): return int(self.d.get(k, dflt))
+            def get_float(self, k, dflt): return float(self.d.get(k, dflt))
+            def get_string(self, k, dflt): return str(self.d.get(k, dflt))
+            def get_bool(self, k, dflt): return bool(self.d.get(k, dflt))
+
+        fu = HitFuse()
+        rc = fu.open(_Cfg({"T": 32, "image_width": 1280, "image_height": 720,
+                           "require_visual_confirm": True,
+                           "min_window_coverage": 0.75,
+                           "asformer_meta_path": str(meta)}))
+        assert rc == _SC.STATUS_SUCCESS
+
+        fu.data_pre(_DC({}))
+
+        # Process the collapsed JSON inputs
+        ball_port = _Port()
+        ball_port.push_back(_Buf(None, ball_payload))
+        poses_port = _Port()
+        poses_port.push_back(_Buf(None, poses_payload))
+        centers_port = _Port()
+        centers_port.push_back(_Buf(None, centers_payload))
+        dc = _DC({"ball_pos": ball_port,
+                  "tracked_poses": poses_port,
+                  "hit_centers": centers_port})
+        rc = fu.process(dc)
+        assert rc == _SC.STATUS_SUCCESS, f"process rc={rc}"
+
+        # data_post should produce one confirmed hit
+        dc_post = _DC({})
+        fu.data_post(dc_post)
+        wins = list(dc_post.output("hit_window"))
+        metas = list(dc_post.output("hit_meta"))
+        drops = list(dc_post.output("dropped_hits"))
+        assert len(wins) == 1, f"expected 1 hit_window, got {len(wins)}"
+        assert len(metas) == 1, f"expected 1 hit_meta, got {len(metas)}"
+        meta_dict = json.loads(bytes(metas[0].as_object()).decode("utf-8"))
+        assert meta_dict["frame_idx"] == 40
+        assert meta_dict["track_id"] == 7
+        print("test_hit_fuse_process_collapsed_json_inputs: PASS")
+
+
 def main() -> int:
     test_cross_confirm_direction_flip_accepts()
     test_cross_confirm_no_flip_rejects()
@@ -321,7 +394,7 @@ def main() -> int:
     test_assemble_window_boundary_padding()
     test_hit_fuse_open_validates_meta()
     test_hit_fuse_end_to_end_one_hit()
-    # More tests appended in tasks 6b–6d.
+    test_hit_fuse_process_collapsed_json_inputs()
     return 0
 
 

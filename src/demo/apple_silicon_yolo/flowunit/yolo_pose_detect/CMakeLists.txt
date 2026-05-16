@@ -27,15 +27,17 @@ set(MODEL_STAMP ${MODEL_DIR}/Manifest.json)
 file(MAKE_DIRECTORY ${FLOWUNIT_PATH})
 configure_file(${FLOWUNIT_CONFIG} ${FLOWUNIT_PATH}/${FLOWUNIT_NAME}.toml @ONLY)
 
-add_custom_command(
-    OUTPUT ${MODEL_STAMP}
-    COMMAND ${CMAKE_COMMAND} -E echo "Exporting yolov8n-pose.mlpackage..."
-    COMMAND ${PYTHON_EXECUTABLE} ${EXPORT_SCRIPT} --out ${MODEL_DIR} --imgsz 640
-    DEPENDS ${EXPORT_SCRIPT}
-    VERBATIM
-)
-add_custom_target(${FLOWUNIT_NAME}_model ALL DEPENDS ${MODEL_STAMP})
+if(APPLE)
+    add_custom_command(
+        OUTPUT ${MODEL_STAMP}
+        COMMAND ${CMAKE_COMMAND} -E echo "Exporting yolov8n-pose.mlpackage..."
+        COMMAND ${PYTHON_EXECUTABLE} ${EXPORT_SCRIPT} --out ${MODEL_DIR} --imgsz 640
+        DEPENDS ${EXPORT_SCRIPT}
+        VERBATIM
+    )
+    add_custom_target(${FLOWUNIT_NAME}_model ALL DEPENDS ${MODEL_STAMP})
 
-install(DIRECTORY ${FLOWUNIT_PATH}
-    DESTINATION ${DEMO_APPLE_SILICON_YOLO_FLOWUNIT_DIR}
-    COMPONENT demo USE_SOURCE_PERMISSIONS)
+    install(DIRECTORY ${FLOWUNIT_PATH}
+        DESTINATION ${DEMO_APPLE_SILICON_YOLO_FLOWUNIT_DIR}
+        COMPONENT demo USE_SOURCE_PERMISSIONS)
+endif()

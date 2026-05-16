@@ -22,6 +22,13 @@ from typing import Any
 import numpy as np
 import _flowunit as modelbox
 
+try:
+    import _tennis_store as _store
+    _HAS_STORE = True
+except ImportError:
+    _store = None
+    _HAS_STORE = False
+
 
 # --- Algorithmic helpers (testable without ModelBox) ---
 
@@ -278,18 +285,11 @@ class HitFuse(modelbox.FlowUnit):
         return modelbox.Status()
 
     def process(self, data_context):
-        for buf in data_context.input("ball_pos"):
-            arr = np.frombuffer(buf.as_object(), dtype=np.float32)
-            if arr.size < 4:
-                modelbox.error(
-                    f"hit_fuse: ball_pos buffer too small ({arr.size} floats)")
-                return modelbox.Status.StatusCode.STATUS_FAULT
-            cx = float(arr[0]); cy = float(arr[1])
-            peak = float(arr[2]); fi = int(arr[3])
-            self._ball[fi] = (cx, cy, peak)
-        for buf in data_context.input("tracked_poses"):
-            payload = json.loads(bytes(buf.as_object()).decode("utf-8"))
-            self._poses[int(payload["frame_idx"])] = payload["tracks"]
+        # ball_pos and tracked_poses are read from the shared _tennis_store
+        # (populated by tracknet_ball_emitter and yolo_pose_track_post) rather
+        # than as direct inputs — this avoids the stream-cardinality mismatch
+        # between the collapsed hit_centers (1 buffer) and the per-frame video
+        # streams (N buffers) which ModelBox's match-stream check rejects.
         for buf in data_context.input("hit_centers"):
             self._centers_raw = json.loads(bytes(buf.as_object()).decode("utf-8"))
         return modelbox.Status.StatusCode.STATUS_SUCCESS
@@ -297,8 +297,18 @@ class HitFuse(modelbox.FlowUnit):
     def data_post(self, data_context):
         if self._centers_raw is None:
             self._centers_raw = []
+        # Read accumulated ball and pose data from the shared store.
+        if _HAS_STORE:
+            self._ball = _store.get_all_ball()
+            self._poses = _store.get_all_poses()
         confirmed, dropped = self.fuse_session(self._centers_raw, self._ball,
                                                self._poses)
+        # Route dropped hits via _tennis_store rather than a direct port edge.
+        # ModelBox's match-stream check deadlocks when one of action_sink's
+        # inputs (dropped_hits = 1 buffer/session) has a different cardinality
+        # than its siblings (hit_meta + logits = N buffers/session).
+        if _HAS_STORE:
+            _store.write_dropped(dropped)
         win_out = data_context.output("hit_window")
         meta_out = data_context.output("hit_meta")
         mask_out = data_context.output("mask")
@@ -317,10 +327,6 @@ class HitFuse(modelbox.FlowUnit):
                                  json.dumps(meta).encode("utf-8"))
             mb.set("hit_id", int(hit_id))
             meta_out.push_back(mb)
-        drop_out = data_context.output("dropped_hits")
-        db = modelbox.Buffer(self.get_bind_device(),
-                             json.dumps(dropped).encode("utf-8"))
-        drop_out.push_back(db)
         return modelbox.Status()
 
     def close(self):

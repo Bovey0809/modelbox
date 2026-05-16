@@ -1,0 +1,20 @@
+#
+# Copyright 2026 The Modelbox Project Authors. All Rights Reserved.
+#
+[base]
+name = "ball_history_collector"
+device = "cpu"
+version = "1.0.0"
+description = "Collect per-frame ball_pos (float32[4]) into a single collapsed JSON dict {frame_idx_str: [cx, cy, peak]} emitted at session end."
+entry = "ball_history_collector@BallHistoryCollector"
+type = "python"
+
+collapse = true
+
+[input]
+[input.input1]
+name = "ball_pos"
+
+[output]
+[output.output1]
+name = "ball_history"

@@ -24,6 +24,13 @@ from typing import Any
 import numpy as np
 import _flowunit as modelbox
 
+try:
+    import _tennis_store as _store
+    _HAS_STORE = True
+except ImportError:
+    _store = None
+    _HAS_STORE = False
+
 # cv2 is optional at import time; the overlay step gracefully degrades.
 try:
     import cv2  # type: ignore
@@ -205,18 +212,18 @@ class ActionSink(modelbox.FlowUnit):
             self._metas.append(
                 json.loads(bytes(buf.as_object()).decode("utf-8"))
             )
-        for buf in data_context.input("dropped_hits"):
-            self._dropped = json.loads(bytes(buf.as_object()).decode("utf-8"))
-        for buf in data_context.input("ball_pos"):
-            arr = np.frombuffer(buf.as_object(), dtype=np.float32)
-            cx, cy, peak, fi = float(arr[0]), float(arr[1]), float(arr[2]), int(arr[3])
-            self._ball[fi] = (cx, cy, peak)
-        for buf in data_context.input("tracked_poses"):
-            payload = json.loads(bytes(buf.as_object()).decode("utf-8"))
-            self._poses[int(payload["frame_idx"])] = payload["tracks"]
+        # dropped_hits, ball, and pose history are all read from the shared
+        # _tennis_store side-channel in data_post(), not as direct port inputs,
+        # to avoid ModelBox stream-cardinality mismatches against the
+        # N-buffer/session logits + hit_meta streams.
         return modelbox.Status.StatusCode.STATUS_SUCCESS
 
     def data_post(self, data_context):
+        # Fetch ball, pose histories, and dropped-hits list from the shared store.
+        if _HAS_STORE:
+            self._ball = _store.get_all_ball()
+            self._poses = _store.get_all_poses()
+            self._dropped = _store.get_all_dropped()
         confirmed: list[dict[str, Any]] = []
         for logit, meta in zip(self._logits, self._metas):
             probs = _softmax(logit.flatten())

@@ -3,7 +3,7 @@
 #
 cmake_minimum_required(VERSION 3.10)
 
-set(FLOWUNIT_NAME "hit_fuse")
+set(FLOWUNIT_NAME "poses_history_collector")
 set(FLOWUNIT_PATH ${CMAKE_CURRENT_BINARY_DIR}/${FLOWUNIT_NAME})
 file(MAKE_DIRECTORY ${FLOWUNIT_PATH})
 
@@ -11,10 +11,6 @@ configure_file(${CMAKE_CURRENT_SOURCE_DIR}/${FLOWUNIT_NAME}.py
                ${FLOWUNIT_PATH}/${FLOWUNIT_NAME}.py @ONLY)
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/${FLOWUNIT_NAME}.toml
                ${FLOWUNIT_PATH}/${FLOWUNIT_NAME}.toml @ONLY)
-# _tennis_store.py is a shared side-channel module imported by multiple
-# flowunits via sys.path (all flowunit dirs are added at runtime).
-configure_file(${CMAKE_CURRENT_SOURCE_DIR}/_tennis_store.py
-               ${FLOWUNIT_PATH}/_tennis_store.py @ONLY)
 
 install(DIRECTORY ${FLOWUNIT_PATH}
     DESTINATION ${DEMO_TENNIS_ACTION_FLOWUNIT_DIR}

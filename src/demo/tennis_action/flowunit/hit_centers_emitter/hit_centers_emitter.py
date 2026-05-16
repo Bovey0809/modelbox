@@ -114,15 +114,27 @@ class HitCentersEmitter(modelbox.FlowUnit):
     def data_post(self, data_context):
         out = data_context.output("hit_centers")
         if not self._logits:
+            modelbox.warn("hit_centers_emitter: no logit buffers received")
             payload = json.dumps([]).encode("utf-8")
             ob = modelbox.Buffer(self.get_bind_device(), payload)
             out.push_back(ob)
             return modelbox.Status()
         merged = np.concatenate(self._logits, axis=0)
+        c0 = merged[:, 0]
+        c1 = merged[:, 1]
+        binary = (c1 > c0).astype(np.int32)
+        smoothed = smooth_majority(binary, max(1, self.smooth_win | 1))
+        modelbox.warn(
+            f"hit_centers_emitter: buffers={len(self._logits)} merged={merged.shape} "
+            f"c0[min,mean,max]=[{c0.min():.3f},{c0.mean():.3f},{c0.max():.3f}] "
+            f"c1[min,mean,max]=[{c1.min():.3f},{c1.mean():.3f},{c1.max():.3f}] "
+            f"hit_windows_raw={int(binary.sum())} hit_windows_smoothed={int(smoothed.sum())}"
+        )
         centers = intervals_to_centers(
             merged, self.video_fps, self.step_sec, self.window_sec,
             self.smooth_win, self.max_hit_dur
         )
+        modelbox.warn(f"hit_centers_emitter: emitted {len(centers)} centers")
         payload = json.dumps(centers).encode("utf-8")
         ob = modelbox.Buffer(self.get_bind_device(), payload)
         ob.set("num_hits", len(centers))

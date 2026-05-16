@@ -21,6 +21,13 @@ from __future__ import annotations
 import numpy as np
 import _flowunit as modelbox
 
+try:
+    import _tennis_store as _store
+    _HAS_STORE = True
+except ImportError:
+    _store = None
+    _HAS_STORE = False
+
 
 def extract_centroid(heat: np.ndarray, score_thr: float, mask_ratio: float,
                      net_h: int, net_w: int) -> tuple[float, float, float]:
@@ -110,6 +117,9 @@ class TracknetBallEmitter(modelbox.FlowUnit):
             ob = modelbox.Buffer(self.get_bind_device(), out.tobytes())
             ob.set("frame_idx", int(self.frame_idx))
             ball_out.push_back(ob)
+            if _HAS_STORE:
+                _store.write_ball(id(self), self.frame_idx,
+                                  cx if cx >= 0 else cx, cy, peak)
             self.frame_idx += 1
         return modelbox.Status.StatusCode.STATUS_SUCCESS
 
@@ -118,6 +128,8 @@ class TracknetBallEmitter(modelbox.FlowUnit):
 
     def data_pre(self, data_context):
         self.frame_idx = 0
+        if _HAS_STORE:
+            _store.reset_ball(id(self))
         return modelbox.Status()
 
     def data_post(self, data_context):

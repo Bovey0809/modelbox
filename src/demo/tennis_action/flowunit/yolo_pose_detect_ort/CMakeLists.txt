@@ -9,6 +9,8 @@ file(MAKE_DIRECTORY ${FLOWUNIT_PATH})
 
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/${FLOWUNIT_NAME}.toml
                ${FLOWUNIT_PATH}/${FLOWUNIT_NAME}.toml @ONLY)
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/yolo_pose_detect_cuda.toml
+               ${FLOWUNIT_PATH}/yolo_pose_detect_cuda.toml @ONLY)
 
 set(YOLO_POSE_ONNX_SRC "${CMAKE_SOURCE_DIR}/assets/tennis_action/yolov8n-pose.onnx")
 set(YOLO_POSE_ONNX_DST "${FLOWUNIT_PATH}/yolov8n-pose.onnx")

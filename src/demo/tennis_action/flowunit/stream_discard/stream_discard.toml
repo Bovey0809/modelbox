@@ -1,0 +1,14 @@
+#
+# Copyright 2026 The Modelbox Project Authors. All Rights Reserved.
+#
+[base]
+name = "stream_discard"
+device = "cpu"
+version = "1.0.0"
+description = "Silent sink: accepts any buffer on 'in_data' and discards it. Used to satisfy ModelBox's requirement that all output ports be connected, for branches whose data is consumed via side-channels rather than direct graph edges."
+entry = "stream_discard@StreamDiscard"
+type = "python"
+
+[input]
+[input.input1]
+name = "in_data"

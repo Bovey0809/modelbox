@@ -60,6 +60,11 @@ class HitWindowEmitter(modelbox.FlowUnit):
             times = np.arange(
                 0.0, max(0.0, duration - self.window_sec) + 1e-9, self.step_sec
             )
+            modelbox.warn(
+                f"hit_window_emitter: audio_loaded len={len(audio)} sr={sr} "
+                f"duration={duration:.2f}s windows={len(times)} "
+                f"window_sec={self.window_sec} step_sec={self.step_sec}"
+            )
             for idx, t in enumerate(times):
                 seg = cut_audio(audio, sr, start_t=float(t), length_s=self.window_sec)
                 img = mel_gray_image(seg, sr, self.n_fft, self.hop_length, self.n_mels)
@@ -71,6 +76,7 @@ class HitWindowEmitter(modelbox.FlowUnit):
                 buf.set("index", int(idx))
                 buf.set("time", float(t) + self.window_sec / 2.0)
                 mel_out.push_back(buf)
+            modelbox.warn(f"hit_window_emitter: emitted {len(times)} mel buffers")
         return modelbox.Status.StatusCode.STATUS_SUCCESS
 
     def close(self):

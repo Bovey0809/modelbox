@@ -26,6 +26,13 @@ from typing import Any
 import numpy as np
 import _flowunit as modelbox
 
+try:
+    import _tennis_store as _store
+    _HAS_STORE = True
+except ImportError:
+    _store = None
+    _HAS_STORE = False
+
 
 def _bbox_iou(a: tuple[float, float, float, float],
               b: tuple[float, float, float, float]) -> float:
@@ -230,6 +237,8 @@ class YoloPoseTrackPost(modelbox.FlowUnit):
             ob = modelbox.Buffer(self.get_bind_device(), payload)
             ob.set("frame_idx", int(self.frame_idx))
             poses_out.push_back(ob)
+            if _HAS_STORE:
+                _store.write_poses(id(self), self.frame_idx, tracked)
             self.frame_idx += 1
         return modelbox.Status.StatusCode.STATUS_SUCCESS
 
@@ -242,6 +251,8 @@ class YoloPoseTrackPost(modelbox.FlowUnit):
         if self.tracker is not None:
             self.tracker = GreedyIoUTracker(self.track_iou, self.max_lost)
         self.frame_idx = 0
+        if _HAS_STORE:
+            _store.reset_poses(id(self))
         return modelbox.Status()
 
     def data_post(self, data_context):
