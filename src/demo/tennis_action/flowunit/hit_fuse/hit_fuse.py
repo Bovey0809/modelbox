@@ -285,24 +285,37 @@ class HitFuse(modelbox.FlowUnit):
         return modelbox.Status()
 
     def process(self, data_context):
-        # ball_pos and tracked_poses are read from the shared _tennis_store
-        # (populated by tracknet_ball_emitter and yolo_pose_track_post) rather
-        # than as direct inputs — this avoids the stream-cardinality mismatch
-        # between the collapsed hit_centers (1 buffer) and the per-frame video
-        # streams (N buffers) which ModelBox's match-stream check rejects.
+        # All three inputs are collapsed streams (1 buffer/session each):
+        #   - hit_centers  : produced by hit_centers_emitter (collapse=true)
+        #   - ball_history : produced by ball_history_collector (collapse=true)
+        #   - poses_history: produced by poses_history_collector (collapse=true)
+        # Routing ball/pose data through the history collectors (instead of the
+        # previous _tennis_store side-channel) makes ModelBox block this node
+        # until the video branch has fully finished, fixing the audio-vs-video
+        # race that previously caused all hits to drop with "no_ball_near_hit".
         for buf in data_context.input("hit_centers"):
             self._centers_raw = json.loads(bytes(buf.as_object()).decode("utf-8"))
+        for buf in data_context.input("ball_history"):
+            raw = json.loads(bytes(buf.as_object()).decode("utf-8"))
+            # JSON keys come back as strings; coerce to int frame indices.
+            self._ball = {int(k): tuple(v) for k, v in raw.items()}
+        for buf in data_context.input("poses_history"):
+            raw = json.loads(bytes(buf.as_object()).decode("utf-8"))
+            self._poses = {int(k): v for k, v in raw.items()}
         return modelbox.Status.StatusCode.STATUS_SUCCESS
 
     def data_post(self, data_context):
         if self._centers_raw is None:
             self._centers_raw = []
-        # Read accumulated ball and pose data from the shared store.
-        if _HAS_STORE:
-            self._ball = _store.get_all_ball()
-            self._poses = _store.get_all_poses()
+        # ball/pose data is now delivered through process() via the
+        # ball_history / poses_history collector ports (above); no need to
+        # pull from _tennis_store anymore.
         confirmed, dropped = self.fuse_session(self._centers_raw, self._ball,
                                                self._poses)
+        modelbox.warn(
+            f"hit_fuse.process: confirmed={len(confirmed)} "
+            f"dropped={len(dropped)} ball_frames={len(self._ball)} "
+            f"pose_frames={len(self._poses)}")
         # Route dropped hits via _tennis_store rather than a direct port edge.
         # ModelBox's match-stream check deadlocks when one of action_sink's
         # inputs (dropped_hits = 1 buffer/session) has a different cardinality

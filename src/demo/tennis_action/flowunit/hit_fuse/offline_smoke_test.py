@@ -51,6 +51,7 @@ _FU.Status = _Status
 _FU.FlowUnit = type("FlowUnit", (), {"__init__": lambda self: None,
                                      "get_bind_device": lambda self: None})
 _FU.info = lambda msg: None
+_FU.warn = lambda msg: None
 _FU.error = lambda msg: print(f"[ERR] {msg}", file=sys.stderr)
 sys.modules["_flowunit"] = _FU
 
@@ -359,8 +360,8 @@ def test_hit_fuse_process_collapsed_json_inputs():
         poses_port.push_back(_Buf(None, poses_payload))
         centers_port = _Port()
         centers_port.push_back(_Buf(None, centers_payload))
-        dc = _DC({"ball_pos": ball_port,
-                  "tracked_poses": poses_port,
+        dc = _DC({"ball_history": ball_port,
+                  "poses_history": poses_port,
                   "hit_centers": centers_port})
         rc = fu.process(dc)
         assert rc == _SC.STATUS_SUCCESS, f"process rc={rc}"

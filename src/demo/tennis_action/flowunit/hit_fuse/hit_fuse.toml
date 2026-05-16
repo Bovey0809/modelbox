@@ -27,12 +27,19 @@ asformer_meta_path = ""
 [input]
 [input.input1]
 name = "hit_centers"
-# ball_pos and tracked_poses are no longer direct inputs: they are provided
-# via the shared _tennis_store side-channel (populated by
-# tracknet_ball_emitter and yolo_pose_track_post) to avoid the ModelBox
-# stream-cardinality mismatch between the collapsed hit_centers stream
-# (1 buffer/session from hit_window_emitter expand) and the per-frame video
-# streams (N buffers/session).  hit_fuse reads from the store in data_post().
+# ball_history and poses_history are produced by the two history-collector
+# flowunits (ORIGIN+STREAM, accumulate in process() and emit one JSON
+# buffer in data_post()), so each delivers exactly one buffer/session.
+# Their data_post emit reaches downstream via the engine's
+# MergeDataPostOutput second-pass (committed earlier in this branch).
+# Wiring them as direct inputs (replacing the previous _tennis_store
+# side-channel for ball/pose) makes ModelBox block hit_fuse until the
+# video branch has finished, fixing the audio-vs-video race where
+# hit_fuse was firing on ~25 % video coverage.
+[input.input2]
+name = "ball_history"
+[input.input3]
+name = "poses_history"
 
 [output]
 [output.output1]

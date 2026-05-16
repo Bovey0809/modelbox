@@ -20,6 +20,12 @@ class StreamDiscard(modelbox.FlowUnit):
     def open(self, config):
         return modelbox.Status.StatusCode.STATUS_SUCCESS
 
+    def data_pre(self, data_context):
+        return modelbox.Status()
+
+    def data_post(self, data_context):
+        return modelbox.Status()
+
     def process(self, data_context):
         # Drain and discard all incoming buffers.
         for _buf in data_context.input("in_data"):

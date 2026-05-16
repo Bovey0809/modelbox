@@ -168,6 +168,9 @@ class ActionSink(modelbox.FlowUnit):
         self._dropped: list[dict[str, Any]] = []
         self._ball: dict[int, tuple[float, float, float]] = {}
         self._poses: dict[int, list[dict[str, Any]]] = {}
+        # Tracks whether _finalize_outputs ran with real data; close() uses
+        # this to decide whether to emit the final fallback "0 hits" artifacts.
+        self._finalized: bool = False
 
     def open(self, config):
         self.output_json = config.get_string("output_json",
@@ -194,6 +197,19 @@ class ActionSink(modelbox.FlowUnit):
                 self.classes = []
         else:
             self.classes = []
+        # Pre-write empty placeholder JSON files at flowunit init.
+        # The engine's StreamFlowUnitDataContext::IsDataPre/IsDataPost return
+        # false when the input stream is empty (only an end_flag arrives,
+        # which happens when hit_fuse emits 0 confirmed hits). In that case
+        # neither data_pre nor data_post fire. close() isn't called either
+        # under SIGKILL (modelbox-tool's RunImpl spin loop never exits). So
+        # the only place we're guaranteed to run is here in open().
+        try:
+            write_results(Path(self.output_json), Path(self.output_dropped),
+                          [], [], 30.0)
+        except OSError as exc:
+            modelbox.error(
+                f"action_sink: cannot pre-write placeholder JSON: {exc}")
         return modelbox.Status.StatusCode.STATUS_SUCCESS
 
     def data_pre(self, data_context):
@@ -219,6 +235,25 @@ class ActionSink(modelbox.FlowUnit):
         return modelbox.Status.StatusCode.STATUS_SUCCESS
 
     def data_post(self, data_context):
+        self._finalize_outputs()
+        return modelbox.Status()
+
+    def close(self):
+        # Fallback: if data_post never ran (e.g. hit_fuse emitted an
+        # empty stream so StreamFlowUnitDataContext::IsDataPost returned
+        # false), still emit JSON/overlay so a "0 hits" run is
+        # distinguishable from a crashed run.
+        if not self._finalized:
+            self._finalize_outputs()
+        return modelbox.Status()
+
+    def _finalize_outputs(self) -> None:
+        """Resolve confirmed/dropped hits, then write JSON + overlay.
+
+        Called from data_post() when real buffers arrived, and from close()
+        as the final fallback when data_post was skipped because the input
+        stream was empty.
+        """
         # Fetch ball, pose histories, and dropped-hits list from the shared store.
         if _HAS_STORE:
             self._ball = _store.get_all_ball()
@@ -253,10 +288,7 @@ class ActionSink(modelbox.FlowUnit):
             )
             if not ok:
                 modelbox.error("action_sink: overlay render failed")
-        return modelbox.Status()
-
-    def close(self):
-        return modelbox.Status()
+        self._finalized = True
 
     def _infer_fps_from_video(self) -> float:
         if not _HAS_CV2 or not self.source_video \

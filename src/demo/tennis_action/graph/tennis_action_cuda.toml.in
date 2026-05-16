@@ -40,8 +40,8 @@ graphconf = '''digraph tennis_action_cuda {
                         conf_threshold=0.30, kpt_threshold=0.4, emit_overlay=false,
                         source_width=1280, source_height=720]
 
-    ball_discard       [type=flowunit, flowunit=stream_discard,     device=cpu, deviceid=0]
-    poses_discard      [type=flowunit, flowunit=stream_discard,     device=cpu, deviceid=0]
+    ball_history       [type=flowunit, flowunit=ball_history_collector,  device=cpu, deviceid=0]
+    poses_history      [type=flowunit, flowunit=poses_history_collector, device=cpu, deviceid=0]
 
     hit_fuse           [type=flowunit, flowunit=hit_fuse,           device=cpu,  deviceid=0,
                         T=32, require_visual_confirm=true, min_window_coverage=0.75,
@@ -81,14 +81,16 @@ graphconf = '''digraph tennis_action_cuda {
     pose_detect:output              -> pose_track_post:in_feat
     videodecoder:out_video_frame    -> pose_track_post:in_image
 
-    # ball_pos and tracked_poses are routed to discard sinks rather than to
-    # hit_fuse directly: per-frame video streams cannot be matched with the
-    # collapsed hit_centers stream (1 buffer/session) at a multi-input node.
-    # The actual ball/pose data is provided to hit_fuse and action_sink via
-    # the _tennis_store side-channel (written in tracknet_ball_emitter and
-    # yolo_pose_track_post process(), read in data_post()).
-    tracknet_ball:ball_pos          -> ball_discard:in_data
-    pose_track_post:tracked_poses   -> poses_discard:in_data
+    # ball_pos and tracked_poses (per-frame, N buffers/session) are funneled
+    # through collapse=true history collectors before reaching hit_fuse, so
+    # they arrive as a single buffer/session that matches hit_centers'
+    # cardinality. This also makes hit_fuse block until the video branch is
+    # done — fixing the audio-vs-video race where hit_fuse fired before
+    # ball/pose data was populated and every hit dropped with "no_ball_near_hit".
+    tracknet_ball:ball_pos          -> ball_history:ball_pos
+    pose_track_post:tracked_poses   -> poses_history:tracked_poses
+    ball_history:ball_history       -> hit_fuse:ball_history
+    poses_history:poses_history     -> hit_fuse:poses_history
 
     hit_centers_emit:hit_centers    -> hit_fuse:hit_centers
 

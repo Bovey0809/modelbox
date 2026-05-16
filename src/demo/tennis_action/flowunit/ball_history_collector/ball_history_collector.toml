@@ -9,8 +9,6 @@ description = "Collect per-frame ball_pos (float32[4]) into a single collapsed J
 entry = "ball_history_collector@BallHistoryCollector"
 type = "python"
 
-collapse = true
-
 [input]
 [input.input1]
 name = "ball_pos"
