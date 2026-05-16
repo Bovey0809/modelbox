@@ -17,6 +17,10 @@
 
 #include "virtualdriver_inference.h"
 
+#ifdef MODELBOX_ORT_WITH_CUDA
+#include <cuda_runtime.h>
+#endif
+
 OrtInference::OrtInference(std::string backend)
     : backend_(std::move(backend)),
       env_(ORT_LOGGING_LEVEL_WARNING, "modelbox-ort") {}
@@ -162,7 +166,8 @@ modelbox::Status OrtInference::Open(
     auto name = session_->GetInputNameAllocated(i, allocator_);
     model_input_names_.push_back(name.get());
     model_input_names_owned_.push_back(std::move(name));
-    auto info = session_->GetInputTypeInfo(i).GetTensorTypeAndShapeInfo();
+    Ort::TypeInfo type_info = session_->GetInputTypeInfo(i);
+    auto info = type_info.GetTensorTypeAndShapeInfo();
     model_input_shapes_.push_back(info.GetShape());
     model_input_types_.push_back(info.GetElementType());
   }
@@ -170,7 +175,8 @@ modelbox::Status OrtInference::Open(
     auto name = session_->GetOutputNameAllocated(i, allocator_);
     model_output_names_.push_back(name.get());
     model_output_names_owned_.push_back(std::move(name));
-    auto info = session_->GetOutputTypeInfo(i).GetTensorTypeAndShapeInfo();
+    Ort::TypeInfo type_info = session_->GetOutputTypeInfo(i);
+    auto info = type_info.GetTensorTypeAndShapeInfo();
     model_output_types_.push_back(info.GetElementType());
   }
 
@@ -195,8 +201,14 @@ modelbox::Status OrtInference::Open(
 
 modelbox::Status OrtInference::RunOnce(
     const std::shared_ptr<modelbox::DataContext> &data_ctx) {
-  auto mem_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator,
-                                             OrtMemTypeDefault);
+#ifdef MODELBOX_ORT_WITH_CUDA
+  const bool on_cuda = (backend_ == "CUDA");
+#else
+  const bool on_cuda = false;
+#endif
+  Ort::MemoryInfo mem_info = on_cuda
+      ? Ort::MemoryInfo("Cuda", OrtArenaAllocator, 0, OrtMemTypeDefault)
+      : Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
   std::vector<Ort::Value> inputs;
   inputs.reserve(io_list_.input_name_list.size());
 
@@ -249,12 +261,20 @@ modelbox::Status OrtInference::RunOnce(
         mem_info, data, total_bytes, shape.data(), shape.size(), type));
   }
 
+  // Bind outputs to CPU memory so that EPs that allocate on device (e.g. CUDA)
+  // copy results back before we read them. Without this the downstream
+  // std::memcpy reads a device pointer from CPU code and segfaults.
   std::vector<Ort::Value> outputs;
   try {
-    outputs = session_->Run(Ort::RunOptions{nullptr},
-                            model_input_names_.data(), inputs.data(),
-                            inputs.size(), model_output_names_.data(),
-                            model_output_names_.size());
+    Ort::IoBinding binding(*session_);
+    for (size_t i = 0; i < inputs.size(); ++i) {
+      binding.BindInput(model_input_names_[i], inputs[i]);
+    }
+    for (size_t i = 0; i < model_output_names_.size(); ++i) {
+      binding.BindOutput(model_output_names_[i], mem_info);
+    }
+    session_->Run(Ort::RunOptions{nullptr}, binding);
+    outputs = binding.GetOutputValues();
   } catch (const std::exception &e) {
     return {modelbox::STATUS_FAULT,
             std::string("onnxruntime: session->Run threw: ") + e.what()};
@@ -278,7 +298,22 @@ modelbox::Status OrtInference::RunOnce(
     if (dst == nullptr) {
       return {modelbox::STATUS_FAULT, "onnxruntime: output buffer null"};
     }
+#ifdef MODELBOX_ORT_WITH_CUDA
+    if (on_cuda) {
+      auto cuda_ret = cudaMemcpy(dst, outputs[i].GetTensorMutableData<void>(),
+                                 total_bytes, cudaMemcpyDeviceToDevice);
+      if (cuda_ret != cudaSuccess) {
+        return {modelbox::STATUS_FAULT,
+                std::string("onnxruntime: cudaMemcpy(D2D) for output ") +
+                    io_list_.output_name_list[i] + " failed: " +
+                    cudaGetErrorString(cuda_ret)};
+      }
+    } else {
+      std::memcpy(dst, outputs[i].GetTensorMutableData<void>(), total_bytes);
+    }
+#else
     std::memcpy(dst, outputs[i].GetTensorMutableData<void>(), total_bytes);
+#endif
 
     std::vector<size_t> shape_vec;
     shape_vec.reserve(shape.size());

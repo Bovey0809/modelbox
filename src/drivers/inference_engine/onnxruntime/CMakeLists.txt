@@ -18,6 +18,11 @@ include_directories(${LIBMODELBOX_BASE_INCLUDE})
 include_directories(${LIBMODELBOX_VIRTUALDRIVER_INFERENCE_INCLUDE})
 include_directories(${ONNXRUNTIME_INCLUDE_DIR})
 
+if(CUDA_FOUND)
+    add_definitions(-DMODELBOX_ORT_WITH_CUDA)
+    include_directories(${CUDA_INCLUDE_DIRS})
+endif()
+
 set(MODELBOX_UNIT_SHARED libmodelbox-engine-onnxruntime)
 set(MODELBOX_UNIT_SOURCE_INCLUDE ${CMAKE_CURRENT_LIST_DIR})
 
@@ -39,6 +44,10 @@ if(NOT APPLE)
 endif()
 target_link_libraries(${MODELBOX_UNIT_SHARED} dl)
 target_link_libraries(${MODELBOX_UNIT_SHARED} ${ONNXRUNTIME_LIBRARIES})
+
+if(CUDA_FOUND)
+    target_link_libraries(${MODELBOX_UNIT_SHARED} ${CUDA_LIBRARIES})
+endif()
 target_link_libraries(${MODELBOX_UNIT_SHARED} ${LIBMODELBOX_SHARED})
 target_link_libraries(${MODELBOX_UNIT_SHARED} ${LIBMODELBOX_VIRTUALDRIVER_INFERENCE_SHARED})
 
