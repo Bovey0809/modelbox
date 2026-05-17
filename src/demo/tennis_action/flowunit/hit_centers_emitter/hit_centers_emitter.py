@@ -87,11 +87,32 @@ class HitCentersEmitter(modelbox.FlowUnit):
         self._logits: list[np.ndarray] = []
 
     def open(self, config):
-        self.video_fps = config.get_float("video_fps", 30.0)
+        fallback_fps = config.get_float("video_fps", 30.0)
         self.step_sec = config.get_float("step_sec", 0.02)
         self.window_sec = config.get_float("window_sec", 0.5)
         self.smooth_win = config.get_int("smooth_win", 5)
         self.max_hit_dur = config.get_float("max_hit_dur", 1.0)
+        video_path = config.get_string("video_path", "")
+        self.video_fps = fallback_fps
+        probed = None
+        if video_path:
+            try:
+                import cv2  # local import to keep test stubs lean
+                cap = cv2.VideoCapture(video_path)
+                if cap.isOpened():
+                    fps = float(cap.get(cv2.CAP_PROP_FPS))
+                    if fps > 0.0:
+                        probed = fps
+                        self.video_fps = fps
+                cap.release()
+            except Exception as exc:  # noqa: BLE001
+                modelbox.warn(
+                    f"hit_centers_emitter: failed to probe fps from "
+                    f"{video_path!r}: {exc}; falling back to config")
+        modelbox.warn(
+            f"hit_centers_emitter: video_fps_resolved={self.video_fps} "
+            f"(probed={probed} fallback={fallback_fps} "
+            f"video_path={video_path!r})")
         self._logits = []
         return modelbox.Status.StatusCode.STATUS_SUCCESS
 

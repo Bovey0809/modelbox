@@ -54,6 +54,7 @@ _FU.Status = _Status
 _FU.FlowUnit = type("FlowUnit", (), {"__init__": lambda self: None,
                                      "get_bind_device": lambda self: None})
 _FU.info = lambda msg: None
+_FU.warn = lambda msg: None
 _FU.error = lambda msg: print(f"[ERR] {msg}", file=sys.stderr)
 sys.modules["_flowunit"] = _FU
 
@@ -203,6 +204,37 @@ def test_long_run_dropped_by_max_hit_dur():
     print("test_long_run_dropped_by_max_hit_dur: PASS")
 
 
+def test_open_falls_back_when_video_path_empty():
+    """When video_path is empty (or omitted) we must fall back to the
+    configured video_fps. Default fallback in the config is 30.0."""
+    fu = HitCentersEmitter()
+    class _Cfg:
+        def get_int(self, k, d): return d
+        def get_float(self, k, d):
+            return 42.0 if k == "video_fps" else d
+        def get_string(self, k, d):
+            return "" if k == "video_path" else d
+        def get_bool(self, k, d): return d
+    fu.open(_Cfg())
+    assert fu.video_fps == 42.0, f"expected fallback 42.0, got {fu.video_fps}"
+    print("test_open_falls_back_when_video_path_empty: PASS")
+
+
+def test_open_falls_back_when_video_path_invalid():
+    """A bad path should not crash open(); fps must fall back to config."""
+    fu = HitCentersEmitter()
+    class _Cfg:
+        def get_int(self, k, d): return d
+        def get_float(self, k, d):
+            return 25.0 if k == "video_fps" else d
+        def get_string(self, k, d):
+            return "/nonexistent/path/to/video.mp4" if k == "video_path" else d
+        def get_bool(self, k, d): return d
+    fu.open(_Cfg())
+    assert fu.video_fps == 25.0, f"expected fallback 25.0, got {fu.video_fps}"
+    print("test_open_falls_back_when_video_path_invalid: PASS")
+
+
 def main() -> int:
     test_smooth_majority_filters_isolated_spikes()
     test_intervals_to_centers_two_clusters()
@@ -210,6 +242,8 @@ def main() -> int:
     test_process_then_data_post_emits_one_buffer()
     test_data_pre_resets_accumulator()
     test_long_run_dropped_by_max_hit_dur()
+    test_open_falls_back_when_video_path_empty()
+    test_open_falls_back_when_video_path_invalid()
     return 0
 
 

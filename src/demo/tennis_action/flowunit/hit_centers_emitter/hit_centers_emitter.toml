@@ -12,7 +12,10 @@ type = "python"
 collapse = true
 
 [config]
+# video_fps is the fallback used only when video_path is empty or cannot
+# be opened. The flowunit prefers the real fps probed from video_path.
 video_fps = 30.0
+video_path = ""
 step_sec = 0.02
 window_sec = 0.5
 smooth_win = 5

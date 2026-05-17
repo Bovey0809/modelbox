@@ -20,7 +20,8 @@ graphconf = '''digraph tennis_action_cpu_stub {
     hit_window_emitter [type=flowunit, flowunit=hit_window_emitter, device=cpu,  deviceid=0,
                         video_path="@DEMO_TENNIS_ACTION_VIDEO@"]
     hit_sound_infer    [type=flowunit, flowunit=hit_sound_infer_ort, device=cpu, deviceid=0, batch_size=1]
-    hit_centers_emit   [type=flowunit, flowunit=hit_centers_emitter, device=cpu, deviceid=0, video_fps=30.0]
+    hit_centers_emit   [type=flowunit, flowunit=hit_centers_emitter, device=cpu, deviceid=0,
+                        video_path="@DEMO_TENNIS_ACTION_VIDEO@", video_fps=30.0]
 
     resize_tn          [type=flowunit, flowunit=resize,             device=cpu, deviceid=0,
                         image_width=512, image_height=288]
