@@ -45,7 +45,7 @@ graphconf = '''digraph tennis_action_cpu_stub {
     poses_history      [type=flowunit, flowunit=poses_history_collector, device=cpu, deviceid=0]
 
     hit_fuse           [type=flowunit, flowunit=hit_fuse,           device=cpu,  deviceid=0,
-                        T=32, require_visual_confirm=true, min_window_coverage=0.75,
+                        T=32, require_visual_confirm=true, min_window_coverage=0.40,
                         image_width=1280, image_height=720,
                         asformer_meta_path="@DEMO_TENNIS_ACTION_ASSETS_DIR@/asformer_meta.json"]
     asformer_infer     [type=flowunit, flowunit=asformer_infer_ort, device=cpu,  deviceid=0, batch_size=1]

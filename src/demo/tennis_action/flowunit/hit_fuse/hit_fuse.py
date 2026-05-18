@@ -134,6 +134,12 @@ def engineer_pose_features(kpts: np.ndarray) -> np.ndarray:
 
 # --- Algorithmic helpers (testable without ModelBox) ---
 
+_CROSS_CONFIRM_WIN = 5      # ± frame window (was ±3)
+_LOW_MOTION_PX = 5.0        # source-px magnitude below which the ball
+                            # counts as "stopped" (handles serve toss
+                            # → impact transition where v_pre ≈ 0).
+
+
 def cross_confirm(ball_map: dict[int, tuple[float, float, float]],
                   hit_frame: int,
                   require_visual_confirm: bool) -> tuple[bool, str]:
@@ -143,32 +149,57 @@ def cross_confirm(ball_map: dict[int, tuple[float, float, float]],
     ball_map: {frame_idx: (cx, cy, peak)}; sentinels are (-1, -1, 0).
     Returns (ok, reason). reason="" on success; otherwise one of:
       "no_ball_near_hit", "trajectory_not_consistent", "visual_skipped".
+
+    Behavior:
+      * Window widened to ±5 frames on each side of the hit (was ±3) —
+        ball recall on phone clips runs 5–50 %, so the smaller window
+        was dropping most hits at "insufficient ball samples".
+      * If both sides have at least 1 valid ball detection (but fewer
+        than 2 per side after widening), soft-accept as
+        `visual_skipped` rather than hard-drop. This was already the
+        behaviour when `require_visual_confirm=False`; we extend it to
+        the partial-data case under `require_visual_confirm=True`.
+      * Trajectory check accepts a serve-style signature where v_pre is
+        nearly stationary (`|v_pre| < _LOW_MOTION_PX`) and v_post is
+        moving — the original check rejected serves because the ball
+        toss has small pre-motion and the post-impact ball doesn't
+        reverse direction.
     """
     def _valid(f):
         p = ball_map.get(f, (-1.0, -1.0, 0.0))
         return p if p[0] >= 0 else None
 
-    pre_pts = [_valid(hit_frame + d) for d in (-3, -2, -1, 0)]
-    post_pts = [_valid(hit_frame + d) for d in (0, 1, 2, 3)]
+    win = _CROSS_CONFIRM_WIN
+    pre_pts = [_valid(hit_frame + d) for d in range(-win, 1)]
+    post_pts = [_valid(hit_frame + d) for d in range(0, win + 1)]
     pre_pts = [p for p in pre_pts if p is not None]
     post_pts = [p for p in post_pts if p is not None]
 
     if not pre_pts and not post_pts:
+        # Zero balls anywhere in ±win frames — model can't see this clip
+        # well. With require_visual_confirm we drop; without, fall back
+        # to audio-only.
         return (not require_visual_confirm,
                 "visual_skipped" if not require_visual_confirm
                 else "no_ball_near_hit")
     if len(pre_pts) < 2 or len(post_pts) < 2:
-        return (not require_visual_confirm,
-                "visual_skipped" if not require_visual_confirm
-                else "no_ball_near_hit")
+        # We have some signal but not enough to compute velocity
+        # reliably. Soft-accept as visual_skipped: downstream
+        # `fused_conf` will use raw `audio_conf` instead of the boosted
+        # value, so callers can distinguish.
+        return (True, "visual_skipped")
 
     # Velocity estimates from first/last pair in each side.
     v_pre = (pre_pts[-1][0] - pre_pts[0][0], pre_pts[-1][1] - pre_pts[0][1])
     v_post = (post_pts[-1][0] - post_pts[0][0], post_pts[-1][1] - post_pts[0][1])
     dot = v_pre[0] * v_post[0] + v_pre[1] * v_post[1]
-    mag_pre = max(1e-6, (v_pre[0] ** 2 + v_pre[1] ** 2) ** 0.5)
+    mag_pre = (v_pre[0] ** 2 + v_pre[1] ** 2) ** 0.5
     mag_post = (v_post[0] ** 2 + v_post[1] ** 2) ** 0.5
-    if dot < 0 or mag_post < 0.3 * mag_pre:
+    # Reversal (most hits) or slow-down (drop shots / hits into net).
+    if dot < 0 or mag_post < 0.3 * max(1e-6, mag_pre):
+        return (True, "")
+    # Serve / stop-then-accelerate: ball was near-stationary before.
+    if mag_pre < _LOW_MOTION_PX:
         return (True, "")
     return (False, "trajectory_not_consistent")
 
@@ -186,19 +217,29 @@ def _bbox_iou_simple(a: list[float], b: list[float]) -> float:
     return inter / union if union > 0 else 0.0
 
 
+_ASSIGN_HITTER_WIN = 5  # ± frame search (was ±2)
+
+
 def assign_hitter(pose_map: dict[int, list[dict[str, Any]]],
                   ball: tuple[float, float, float],
                   hit_frame: int) -> dict[str, Any] | None:
     """Pick the track whose closer wrist (L or R) is nearest to `ball` at
-    `hit_frame`. Look ±2 frames if the target frame is empty.
+    `hit_frame`. Search ±5 frames outward from the hit (was ±2).
 
-    Returns {track_id, dist, tie_resolved, frame_used} or None when no track
-    can be located in [f-2, f+2].
+    Returns {track_id, dist, tie_resolved, frame_used} or None when no
+    track can be located within ±_ASSIGN_HITTER_WIN frames. Widened
+    because pose recall on phone clips can be patchy and the player is
+    often missing from the exact hit frame even when present in
+    neighbouring frames.
     """
     bx, by, _ = ball
     poses = None
     frame_used = hit_frame
-    for d in (0, -1, 1, -2, 2):
+    # Outward search: 0, ±1, ±2, ..., ±_ASSIGN_HITTER_WIN.
+    offsets = [0]
+    for d in range(1, _ASSIGN_HITTER_WIN + 1):
+        offsets.extend([-d, d])
+    for d in offsets:
         cand = pose_map.get(hit_frame + d)
         if cand:
             poses = cand

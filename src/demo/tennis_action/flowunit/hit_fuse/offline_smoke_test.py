@@ -115,6 +115,38 @@ def test_cross_confirm_missing_ball_without_require_accepts():
     print("test_cross_confirm_missing_ball_without_require_accepts: PASS")
 
 
+def test_cross_confirm_partial_ball_soft_accept():
+    """One ball detection on each side of the hit (but <2 each) — with
+    require_visual_confirm=True we now soft-accept as visual_skipped
+    rather than dropping. Used to be: insufficient samples → drop."""
+    ball_full = {f: (-1.0, -1.0, 0.0) for f in range(100)}
+    ball_full[48] = (100.0, 50.0, 0.8)    # 1 detection in pre
+    ball_full[52] = (105.0, 50.0, 0.8)    # 1 detection in post
+    ok, reason = cross_confirm(ball_full, hit_frame=50, require_visual_confirm=True)
+    assert ok, f"expected soft-accept, got ok={ok} reason={reason}"
+    assert reason == "visual_skipped", reason
+    print("test_cross_confirm_partial_ball_soft_accept: PASS")
+
+
+def test_cross_confirm_serve_low_motion_accepts():
+    """Serve signature: v_pre near zero (ball during toss), v_post fast
+    (ball leaving racquet). Old check rejected because dot >= 0 and
+    |v_post| > 0.3 * |v_pre|. New check accepts when |v_pre| is tiny."""
+    ball_full: dict[int, tuple[float, float, float]] = {}
+    # Pre: ball stationary at toss apex (frames 45..50).
+    for f in range(45, 51):
+        ball_full[f] = (200.0, 50.0 + (f - 45) * 0.1, 0.8)  # tiny y drift
+    # Post: ball flies away to the right (frames 50..56).
+    for f in range(51, 57):
+        ball_full[f] = (200.0 + (f - 50) * 30, 50.0, 0.8)
+    for f in list(range(0, 45)) + list(range(57, 100)):
+        ball_full[f] = (-1.0, -1.0, 0.0)
+    ok, reason = cross_confirm(ball_full, hit_frame=50, require_visual_confirm=True)
+    assert ok, f"serve should accept, got reason={reason}"
+    assert reason == "", reason
+    print("test_cross_confirm_serve_low_motion_accepts: PASS")
+
+
 # --- Hitter assignment tests (Task 6b) ---
 
 def _person(tid: int, bbox: tuple[float, float, float, float],
@@ -169,6 +201,18 @@ def test_assign_hitter_uses_nearby_frame_when_target_empty():
     assert info is not None and info["track_id"] == 7, info
     assert info["frame_used"] == 48, f"frame_used={info['frame_used']}"
     print("test_assign_hitter_uses_nearby_frame_when_target_empty: PASS")
+
+
+def test_assign_hitter_widened_window_finds_frame_minus_5():
+    """assign_hitter now searches ±5 frames (was ±2). Verify pose at
+    hit-5 is found and hit-6 isn't."""
+    poses = [_person(7, (50, 50, 200, 300), (100, 100), (180, 200))]
+    info = assign_hitter({45: poses}, (105, 103, 0.9), hit_frame=50)
+    assert info is not None and info["frame_used"] == 45, info
+    # Pose at hit-6 = outside the window: must return None.
+    info2 = assign_hitter({44: poses}, (105, 103, 0.9), hit_frame=50)
+    assert info2 is None, f"expected None for frame 44 (delta=-6), got {info2}"
+    print("test_assign_hitter_widened_window_finds_frame_minus_5: PASS")
 
 
 # --- Window assembly tests (Task 6c) ---
@@ -470,6 +514,9 @@ def main() -> int:
     test_hit_fuse_process_collapsed_json_inputs()
     test_engineer_pose_features_shape_and_gating()
     test_data_post_emits_engineered_features()
+    test_cross_confirm_partial_ball_soft_accept()
+    test_cross_confirm_serve_low_motion_accepts()
+    test_assign_hitter_widened_window_finds_frame_minus_5()
     return 0
 
 

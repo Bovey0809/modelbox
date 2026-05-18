@@ -19,7 +19,12 @@ expand = true
 [config]
 T = 32
 require_visual_confirm = true
-min_window_coverage = 0.75
+# min_window_coverage: fraction of T frames that must have a valid pose
+# (including boundary forward-fill) for assemble_window to emit a
+# window. The default 0.75 dropped most hits on phone clips because
+# pose recall is sparse; 0.40 still rejects truly empty windows while
+# letting hits with ~13 valid poses out of 32 frames through.
+min_window_coverage = 0.40
 image_width = 1280
 image_height = 720
 asformer_meta_path = ""
