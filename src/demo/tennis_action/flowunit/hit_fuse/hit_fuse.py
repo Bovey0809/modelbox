@@ -30,6 +30,108 @@ except ImportError:
     _HAS_STORE = False
 
 
+# --- Pose feature engineering (mirrors action_recognition repo's
+# utils/dataset.py::engineer_pose_features so the per-hit feature tensor
+# matches what the trained ASFormer ONNX expects: (B, 189, T) channel-first.
+# Without this asformer_infer_ort sees (T, 17, 3) raw keypoints and either
+# crashes on shape mismatch or produces garbage logits. ---
+
+_CONF_THRESHOLD = 0.1
+
+_COCO_BONES = [
+    (5, 7), (7, 9), (6, 8), (8, 10),
+    (5, 11), (6, 12),
+    (11, 13), (13, 15), (12, 14), (14, 16),
+    (5, 6), (11, 12), (0, 5), (0, 6),
+]
+
+_COCO_ANGLES = [
+    (5, 7, 9), (6, 8, 10), (7, 5, 11), (8, 6, 12),
+    (5, 11, 13), (6, 12, 14), (11, 13, 15), (12, 14, 16),
+]
+
+_FEATURE_DIM = 189  # 51 base + 34 rel + 34 vel + 34 acc + 28 bone + 8 angle
+
+
+def engineer_pose_features(kpts: np.ndarray) -> np.ndarray:
+    """Engineer ASFormer-input features from (T, 17, 3) COCO keypoints.
+
+    Ports `action_recognition/utils/dataset.py::engineer_pose_features` —
+    every derived feature is confidence-gated (zeroed when contributing
+    joints have conf < CONF_THRESHOLD).
+
+    Returns: (T, 189) float32.
+    """
+    T = kpts.shape[0]
+    xy = kpts[:, :, :2]
+    conf = kpts[:, :, 2]
+    joint_valid = conf >= _CONF_THRESHOLD  # (T, 17)
+
+    # 1. Base 51-d: gated (x, y, conf) flat.
+    gated = kpts.copy()
+    gated[conf < _CONF_THRESHOLD, :2] = 0.0
+    base = gated.reshape(T, -1)
+
+    # 2. Hip-relative 34-d.
+    hip_center = (xy[:, 11:12, :] + xy[:, 12:13, :]) / 2
+    relative = (xy - hip_center).reshape(T, -1)
+    hip_valid = joint_valid[:, 11] & joint_valid[:, 12]
+    rel_gate = (joint_valid & hip_valid[:, np.newaxis]).astype(np.float32)
+    rel_gate = np.repeat(rel_gate[:, :, np.newaxis], 2, axis=2).reshape(T, -1)
+    relative *= rel_gate
+
+    # 3. Velocity 34-d.
+    velocity = np.zeros_like(xy)
+    velocity[1:] = xy[1:] - xy[:-1]
+    velocity = velocity.reshape(T, -1)
+    vel_gate = np.zeros((T, 17), dtype=np.float32)
+    vel_gate[1:] = (joint_valid[1:] & joint_valid[:-1]).astype(np.float32)
+    vel_gate = np.repeat(vel_gate[:, :, np.newaxis], 2, axis=2).reshape(T, -1)
+    velocity *= vel_gate
+
+    # 4. Acceleration 34-d.
+    accel = np.zeros_like(xy)
+    if T > 2:
+        accel[2:] = xy[2:] - 2 * xy[1:-1] + xy[:-2]
+    accel = accel.reshape(T, -1)
+    acc_gate = np.zeros((T, 17), dtype=np.float32)
+    if T > 2:
+        acc_gate[2:] = (joint_valid[2:] & joint_valid[1:-1]
+                        & joint_valid[:-2]).astype(np.float32)
+    acc_gate = np.repeat(acc_gate[:, :, np.newaxis], 2, axis=2).reshape(T, -1)
+    accel *= acc_gate
+
+    # 5. Bone-vector 28-d.
+    bones, bone_gates = [], []
+    for j1, j2 in _COCO_BONES:
+        bones.append(xy[:, j2] - xy[:, j1])
+        bone_gates.append((joint_valid[:, j1] & joint_valid[:, j2])
+                          .astype(np.float32))
+    bone_feats = np.stack(bones, axis=1).reshape(T, -1)
+    bone_gate = np.stack(bone_gates, axis=1)
+    bone_gate = np.repeat(bone_gate[:, :, np.newaxis], 2, axis=2).reshape(T, -1)
+    bone_feats *= bone_gate
+
+    # 6. Joint-angle 8-d (normalised to [0, 1]).
+    angles, angle_gates = [], []
+    for j1, j2, j3 in _COCO_ANGLES:
+        v1 = xy[:, j1] - xy[:, j2]
+        v2 = xy[:, j3] - xy[:, j2]
+        dot = (v1 * v2).sum(axis=1)
+        norms = np.linalg.norm(v1, axis=1) * np.linalg.norm(v2, axis=1) + 1e-8
+        cos_angle = np.clip(dot / norms, -1.0, 1.0)
+        angles.append(np.arccos(cos_angle) / np.pi)
+        angle_gates.append((joint_valid[:, j1] & joint_valid[:, j2]
+                            & joint_valid[:, j3]).astype(np.float32))
+    angle_feats = np.stack(angles, axis=1)
+    angle_feats *= np.stack(angle_gates, axis=1)
+
+    out = np.concatenate([base, relative, velocity, accel,
+                          bone_feats, angle_feats], axis=1).astype(np.float32)
+    assert out.shape == (T, _FEATURE_DIM), out.shape
+    return out
+
+
 # --- Algorithmic helpers (testable without ModelBox) ---
 
 def cross_confirm(ball_map: dict[int, tuple[float, float, float]],
@@ -326,11 +428,19 @@ class HitFuse(modelbox.FlowUnit):
         meta_out = data_context.output("hit_meta")
         mask_out = data_context.output("mask")
         for hit_id, (arr, meta) in enumerate(confirmed):
-            wb = modelbox.Buffer(self.get_bind_device(),
-                                 arr.astype(np.float32).tobytes())
+            # arr is the (T, 17, 3) keypoint window assemble_window returned.
+            # Engineer to (T, 189) — matches what ASFormer was trained on —
+            # then transpose to (189, T) channel-first to match the ONNX
+            # input layout: features ['batch', 189, 'time']. The flowunit
+            # `asformer_infer_ort` reads buffer bytes into this shape
+            # directly, so the on-wire layout must be (C, T) contiguous.
+            feats = engineer_pose_features(arr)            # (T, 189)
+            feats_ct = np.ascontiguousarray(feats.T)       # (189, T)
+            wb = modelbox.Buffer(self.get_bind_device(), feats_ct.tobytes())
             wb.set("hit_id", int(hit_id))
             win_out.push_back(wb)
-            # emit all-ones mask (T,) so asformer_infer_ort gets its second input
+            # Mask is (T,) all-ones because engineer_pose_features fills
+            # every frame (gating happens per-feature, not per-frame).
             mask_arr = np.ones(self.T, dtype=np.float32)
             mkb = modelbox.Buffer(self.get_bind_device(), mask_arr.tobytes())
             mkb.set("hit_id", int(hit_id))

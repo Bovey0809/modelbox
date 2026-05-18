@@ -57,7 +57,8 @@ sys.modules["_flowunit"] = _FU
 
 sys.path.insert(0, str(Path(__file__).parent))
 from hit_fuse import (  # noqa: E402
-    cross_confirm, assign_hitter, assemble_window, HitFuse
+    cross_confirm, assign_hitter, assemble_window, HitFuse,
+    engineer_pose_features,
 )
 
 
@@ -380,6 +381,77 @@ def test_hit_fuse_process_collapsed_json_inputs():
         print("test_hit_fuse_process_collapsed_json_inputs: PASS")
 
 
+def test_engineer_pose_features_shape_and_gating():
+    """engineer_pose_features must produce (T, 189) and zero out
+    derived features for joints below CONF_THRESHOLD."""
+    T = 32
+    kpts = np.zeros((T, 17, 3), dtype=np.float32)
+    kpts[:, :, 0] = 0.5
+    kpts[:, :, 1] = 0.5
+    kpts[:, :, 2] = 0.8                       # all high-confidence
+    feats = engineer_pose_features(kpts)
+    assert feats.shape == (T, 189), feats.shape
+    assert feats.dtype == np.float32
+
+    # Now zero out joint 9 (left_wrist) confidence; bone (7,9) and any
+    # angle/relative referencing 9 should zero out for those rows.
+    kpts2 = kpts.copy()
+    kpts2[:, 9, 2] = 0.0
+    feats2 = engineer_pose_features(kpts2)
+    # base[9*3:9*3+2] (x,y) must be zeroed; conf stays
+    assert np.allclose(feats2[:, 9 * 3:9 * 3 + 2], 0.0)
+    print("test_engineer_pose_features_shape_and_gating: PASS")
+
+
+def test_data_post_emits_engineered_features():
+    """data_post emit must produce a buffer of size 189*T*4 bytes per hit
+    (channel-first layout matching ASFormer ONNX input shape)."""
+    class _Cfg:
+        def __init__(self, d): self.d = d
+        def get_int(self, k, dflt): return int(self.d.get(k, dflt))
+        def get_float(self, k, dflt): return float(self.d.get(k, dflt))
+        def get_string(self, k, dflt): return str(self.d.get(k, dflt))
+        def get_bool(self, k, dflt): return bool(self.d.get(k, dflt))
+
+    with tempfile.TemporaryDirectory() as td:
+        meta_path = Path(td) / "asformer_meta.json"
+        _write_stub_meta(meta_path, T=32)
+
+        fu = HitFuse()
+        fu.open(_Cfg({"T": 32, "image_width": 1280, "image_height": 720,
+                      "require_visual_confirm": True,
+                      "min_window_coverage": 0.0,
+                      "asformer_meta_path": str(meta_path)}))
+        # Inject a single confirmed hit directly via fuse_session helpers.
+        # Use a fake (T,17,3) keypoint window matching what assemble_window
+        # produces.
+        arr = np.full((32, 17, 3), 0.5, dtype=np.float32)
+        fu._centers_raw = []
+        # Monkey-patch fuse_session to return our canned arr
+        confirmed = [(arr, {"frame_idx": 40, "track_id": 7, "audio_conf": 0.9,
+                            "fused_conf": 0.95, "ball_xy": [0.0, 0.0],
+                            "tie_resolved": False, "boundary_padded": False,
+                            "visual_agrees": True})]
+        fu.fuse_session = lambda *a, **kw: (confirmed, [])
+        dc = _DC({})
+        fu.data_post(dc)
+        wins = list(dc.output("hit_window"))
+        masks = list(dc.output("mask"))
+        assert len(wins) == 1
+        assert len(masks) == 1
+        body = bytes(wins[0].as_object())
+        expected = 189 * 32 * 4
+        assert len(body) == expected, (len(body), expected)
+        # Reshape to verify channel-first
+        arr_out = np.frombuffer(body, dtype=np.float32).reshape(189, 32)
+        assert arr_out.shape == (189, 32)
+        # Mask is (T,) all-ones
+        mask_arr = np.frombuffer(bytes(masks[0].as_object()), dtype=np.float32)
+        assert mask_arr.shape == (32,)
+        assert np.all(mask_arr == 1.0)
+        print("test_data_post_emits_engineered_features: PASS")
+
+
 def main() -> int:
     test_cross_confirm_direction_flip_accepts()
     test_cross_confirm_no_flip_rejects()
@@ -396,6 +468,8 @@ def main() -> int:
     test_hit_fuse_open_validates_meta()
     test_hit_fuse_end_to_end_one_hit()
     test_hit_fuse_process_collapsed_json_inputs()
+    test_engineer_pose_features_shape_and_gating()
+    test_data_post_emits_engineered_features()
     return 0
 
 
